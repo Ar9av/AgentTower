@@ -16,7 +16,7 @@ export default async function ProjectsPage() {
   return (
     <>
       <Nav />
-      <main style={{ padding: '32px 28px', maxWidth: 1240, margin: '0 auto', width: '100%' }}>
+      <main style={{ padding: 'clamp(16px, 4vw, 32px) clamp(12px, 4vw, 28px)', maxWidth: 1240, margin: '0 auto', width: '100%' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 28 }}>
           <div>
@@ -40,7 +40,7 @@ export default async function ProjectsPage() {
             <p style={{ fontSize: 13, color: 'var(--text2)', margin: 0 }}>Run Claude Code in any project to see it here.</p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: 12 }}>
             {projects.map(p => (
               <Link key={p.dirName} href={`/project?p=${encodeB64(p.dirName)}`} style={{ textDecoration: 'none' }}>
                 <div

@@ -165,21 +165,21 @@ export default function MessageBlock({
         {isUser ? 'You' : 'Claude'} · {new Date(message.timestamp).toLocaleTimeString()}
       </div>
       <div style={{
-        maxWidth: '80%',
+        maxWidth: 'min(80%, 700px)',
         background: isUser
-          ? 'linear-gradient(135deg, rgba(91,163,255,0.75) 0%, rgba(61,100,240,0.75) 100%)'
-          : 'rgba(255,255,255,0.055)',
+          ? 'color-mix(in srgb, var(--accent) 80%, transparent)'
+          : 'var(--glass-bg)',
         backdropFilter: isUser ? undefined : 'blur(16px) saturate(1.5)',
         WebkitBackdropFilter: isUser ? undefined : 'blur(16px) saturate(1.5)',
-        color: 'var(--text)',
+        color: isUser ? '#fff' : 'var(--text)',
         borderRadius: isUser ? '14px 14px 2px 14px' : '14px 14px 14px 2px',
-        padding: '11px 16px',
+        padding: 'clamp(9px,2vw,12px) clamp(12px,2vw,16px)',
         border: isUser
-          ? '1px solid rgba(91,163,255,0.4)'
-          : '1px solid rgba(255,255,255,0.09)',
+          ? '1px solid color-mix(in srgb, var(--accent) 50%, transparent)'
+          : '1px solid var(--glass-border)',
         boxShadow: isUser
-          ? 'inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 16px rgba(61,100,240,0.25)'
-          : 'inset 0 1px 0 rgba(255,255,255,0.10), 0 4px 20px rgba(0,0,0,0.25)',
+          ? 'inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 16px color-mix(in srgb, var(--accent) 25%, transparent)'
+          : 'var(--specular), 0 4px 20px rgba(0,0,0,0.12)',
         width: isUser ? 'fit-content' : '100%',
       }}>
         {displayBlocks.map((block, i) => {

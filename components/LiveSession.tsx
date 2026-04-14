@@ -242,7 +242,7 @@ export default function LiveSession({
       </div>
 
       {/* ── Messages ─────────────────────────────────────────────────── */}
-      <div ref={containerRef} onScroll={checkAtBottom} style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
+      <div ref={containerRef} onScroll={checkAtBottom} style={{ flex: 1, overflowY: 'auto', padding: 'clamp(14px,3vw,24px) clamp(12px,4vw,28px)' }}>
         <div style={{ maxWidth: 840, margin: '0 auto' }}>
 
           {/* Pinned first message */}
@@ -399,13 +399,14 @@ interface BarProps {
 
 function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending, isThinking, onSendInput, onKillAndRestart, onResumeProcess }: BarProps) {
   const base: React.CSSProperties = { flexShrink: 0, borderLeft: 'none', borderRight: 'none', borderBottom: 'none', borderRadius: 0 }
+  const pad = 'clamp(10px,3vw,16px) clamp(12px,4vw,24px)'
 
   if (procState === 'running') return (
-    <div className="glass-lg" style={{ padding: '14px 24px', ...base }}>
-      <form onSubmit={onSendInput} style={{ display: 'flex', gap: 10, maxWidth: 840, margin: '0 auto' }}>
+    <div className="glass-lg" style={{ padding: pad, ...base }}>
+      <form onSubmit={onSendInput} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, maxWidth: 840, margin: '0 auto' }}>
         <input className="glass-input" value={inputText} onChange={e => setInputText(e.target.value)}
-          placeholder={isThinking ? 'Claude is thinking — you can still send a message…' : 'Send a message to this session…'}
-          style={{ flex: 1, fontSize: 14, padding: '10px 16px', borderRadius: 12 }} />
+          placeholder={isThinking ? 'Claude is thinking — send a message…' : 'Send a message…'}
+          style={{ flex: '1 1 200px', fontSize: 15, padding: '10px 16px', borderRadius: 12 }} />
         <button type="submit" className="glass-btn-prominent" disabled={!inputText.trim() || sending}
           style={{ width: 'auto', padding: '10px 20px', fontSize: 14, flexShrink: 0 }}>
           {sending ? '…' : 'Send'}
@@ -415,19 +416,19 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
   )
 
   if (procState === 'paused') return (
-    <div className="glass-lg" style={{ padding: '14px 24px', ...base }}>
+    <div className="glass-lg" style={{ padding: pad, ...base }}>
       <div style={{ maxWidth: 840, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, padding: '8px 14px',
-          background: 'rgba(245,200,66,0.08)', border: '1px solid rgba(245,200,66,0.2)', borderRadius: 10, fontSize: 13, color: 'var(--yellow)' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 10, padding: '8px 14px',
+          background: 'color-mix(in srgb, var(--yellow) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--yellow) 28%, transparent)', borderRadius: 10, fontSize: 13, color: 'var(--yellow)' }}>
           <span>⏸ Session is paused</span>
-          <button className="chip chip-green" onClick={onResumeProcess} style={{ cursor: 'pointer', marginLeft: 'auto', padding: '3px 12px' }}>Resume process</button>
+          <button className="chip chip-green" onClick={onResumeProcess} style={{ cursor: 'pointer', marginLeft: 'auto', padding: '4px 14px', minHeight: 32 }}>Resume</button>
         </div>
-        <form onSubmit={onKillAndRestart} style={{ display: 'flex', gap: 10 }}>
+        <form onSubmit={onKillAndRestart} style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <input className="glass-input" value={inputText} onChange={e => setInputText(e.target.value)}
-            placeholder="Or: kill this session and start a new one with this prompt…"
-            style={{ flex: 1, fontSize: 14, padding: '10px 16px', borderRadius: 12 }} />
+            placeholder="Kill & restart with a new prompt…"
+            style={{ flex: '1 1 180px', fontSize: 15, padding: '10px 16px', borderRadius: 12 }} />
           <button type="submit" className="glass-btn" disabled={!inputText.trim() || sending}
-            style={{ width: 'auto', padding: '10px 18px', fontSize: 14, flexShrink: 0, borderColor: 'rgba(255,90,90,0.3)', color: 'var(--red)' }}>
+            style={{ width: 'auto', padding: '10px 18px', fontSize: 14, flexShrink: 0, borderColor: 'color-mix(in srgb,var(--red) 35%,transparent)', color: 'var(--red)', minHeight: 44 }}>
             {sending ? '…' : 'Kill & restart'}
           </button>
         </form>
@@ -436,33 +437,32 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
   )
 
   return (
-    <div className="glass-lg" style={{ padding: '14px 24px', ...base }}>
+    <div className="glass-lg" style={{ padding: pad, ...base }}>
       <div style={{ maxWidth: 840, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, padding: '8px 14px',
-          background: wasInterrupted ? 'rgba(255,90,90,0.07)' : 'rgba(61,214,140,0.07)',
-          border: `1px solid ${wasInterrupted ? 'rgba(255,90,90,0.2)' : 'rgba(61,214,140,0.2)'}`,
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10, padding: '8px 14px',
+          background: `color-mix(in srgb, ${wasInterrupted ? 'var(--red)' : 'var(--green)'} 8%, transparent)`,
+          border: `1px solid color-mix(in srgb, ${wasInterrupted ? 'var(--red)' : 'var(--green)'} 25%, transparent)`,
           borderRadius: 10, fontSize: 13, color: wasInterrupted ? 'var(--red)' : 'var(--green)' }}>
-          <span>{wasInterrupted ? '⚡ Session was interrupted' : '✓ Session complete'}</span>
-          <span style={{ color: 'var(--text2)', marginLeft: 4 }}>— {wasInterrupted ? 'Resume or start fresh below' : 'Continue with a follow-up or start a new session'}</span>
+          <span>{wasInterrupted ? '⚡ Interrupted' : '✓ Complete'}</span>
+          <span style={{ color: 'var(--text2)' }}>—</span>
+          <span style={{ color: 'var(--text2)', fontSize: 12 }}>{wasInterrupted ? 'Resume or start fresh' : 'Continue or start a new session'}</span>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <input className="glass-input" value={inputText} onChange={e => setInputText(e.target.value)}
-            placeholder="Type a follow-up to continue, or a new prompt to restart…"
-            style={{ flex: 1, fontSize: 14, padding: '10px 16px', borderRadius: 12 }} />
+            placeholder="Continue or restart with a new prompt…"
+            style={{ flex: '1 1 160px', fontSize: 15, padding: '10px 16px', borderRadius: 12 }} />
           <button className="glass-btn-prominent" onClick={onSendInput as unknown as React.MouseEventHandler}
-            disabled={!inputText.trim() || sending} style={{ width: 'auto', padding: '10px 18px', fontSize: 14, flexShrink: 0 }}
-            title="Resume this session thread (claude --resume)">
+            disabled={!inputText.trim() || sending} style={{ width: 'auto', padding: '10px 18px', fontSize: 14, flexShrink: 0, minHeight: 44 }}>
             {sending ? '…' : 'Continue ↩'}
           </button>
           <button className="glass-btn" onClick={onKillAndRestart as unknown as React.MouseEventHandler}
-            disabled={!inputText.trim() || sending} style={{ width: 'auto', padding: '10px 18px', fontSize: 14, flexShrink: 0 }}
-            title="Start a fresh session in this project">
-            New session ↗
+            disabled={!inputText.trim() || sending} style={{ width: 'auto', padding: '10px 18px', fontSize: 14, flexShrink: 0, minHeight: 44 }}>
+            New ↗
           </button>
         </div>
         <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--text3)' }}>
           <strong style={{ color: 'var(--text2)' }}>Continue ↩</strong> resumes this thread &nbsp;·&nbsp;
-          <strong style={{ color: 'var(--text2)' }}>New session ↗</strong> starts fresh in the same project
+          <strong style={{ color: 'var(--text2)' }}>New ↗</strong> starts fresh in same project
         </p>
       </div>
     </div>

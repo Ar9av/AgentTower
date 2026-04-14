@@ -2,10 +2,13 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import Link from 'next/link'
+import { useTheme } from './ThemeProvider'
 
 export default function Nav() {
   const router = useRouter()
+  const { theme, toggle } = useTheme()
   const [search, setSearch] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -14,67 +17,125 @@ export default function Nav() {
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()
-    if (search.trim().length >= 2) router.push(`/search?q=${encodeURIComponent(search.trim())}`)
+    const q = search.trim()
+    if (q.length >= 2) {
+      router.push(`/search?q=${encodeURIComponent(q)}`)
+      setSearchOpen(false)
+    }
   }
 
   return (
-    <nav className="glass-lg" style={{
-      padding: '0 24px',
-      height: 56,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 20,
-      position: 'sticky',
-      top: 0,
-      zIndex: 100,
-      borderLeft: 'none',
-      borderRight: 'none',
-      borderTop: 'none',
-      borderRadius: 0,
-    }}>
-      <Link href="/projects" style={{
-        fontWeight: 700,
-        fontSize: 16,
-        color: 'var(--accent)',
-        textDecoration: 'none',
-        whiteSpace: 'nowrap',
-        letterSpacing: '-0.01em',
+    <>
+      <nav className="glass-lg" style={{
+        padding: '0 16px',
+        height: 54,
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
+        gap: 12,
+        position: 'sticky',
+        top: 0,
+        zIndex: 100,
+        borderLeft: 'none',
+        borderRight: 'none',
+        borderTop: 'none',
+        borderRadius: 0,
       }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="https://cdn-icons-png.flaticon.com/512/3016/3016606.png"
-          alt=""
-          width={22}
-          height={22}
-          style={{ filter: 'invert(1) sepia(1) saturate(3) hue-rotate(190deg)', opacity: 0.85 }}
-        />
-        <span style={{
-          background: 'linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-        }}>AgentTower</span>
-      </Link>
+        {/* Logo */}
+        <Link href="/projects" style={{
+          fontWeight: 700,
+          fontSize: 15,
+          textDecoration: 'none',
+          whiteSpace: 'nowrap',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 7,
+          flexShrink: 0,
+        }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="https://cdn-icons-png.flaticon.com/512/3016/3016606.png"
+            alt=""
+            width={20}
+            height={20}
+            style={{ filter: theme === 'dark' ? 'invert(1) sepia(1) saturate(3) hue-rotate(190deg)' : 'sepia(1) saturate(3) hue-rotate(190deg)', opacity: 0.9 }}
+          />
+          <span style={{
+            background: 'linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+          }} className="hide-mobile">AgentTower</span>
+        </Link>
 
-      <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 380 }}>
-        <input
-          className="glass-input"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="⌕  Search sessions…"
-          style={{ fontSize: 13, padding: '6px 12px', borderRadius: 8 }}
-        />
-      </form>
+        {/* Desktop search */}
+        <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 360 }} className="hide-mobile">
+          <input
+            className="glass-input"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="⌕  Search sessions…"
+            style={{ fontSize: 13, padding: '6px 12px', borderRadius: 8, minHeight: 36 }}
+          />
+        </form>
 
-      <button
-        onClick={handleLogout}
-        className="glass-btn"
-        style={{ marginLeft: 'auto', padding: '5px 14px', fontSize: 13 }}
-      >
-        Logout
-      </button>
-    </nav>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Mobile search toggle */}
+          <button
+            className="glass-btn show-mobile"
+            onClick={() => setSearchOpen(v => !v)}
+            style={{ padding: '8px 10px', minHeight: 36, fontSize: 16 }}
+            aria-label="Search"
+          >
+            ⌕
+          </button>
+
+          {/* Theme toggle */}
+          <button
+            onClick={toggle}
+            className="glass-btn"
+            style={{ padding: '6px 10px', minHeight: 36, fontSize: 15 }}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
+
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="glass-btn"
+            style={{ padding: '6px 14px', minHeight: 36, fontSize: 13 }}
+          >
+            <span className="hide-mobile">Logout</span>
+            <span className="show-mobile" style={{ fontSize: 16 }}>⏏</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* Mobile search dropdown */}
+      {searchOpen && (
+        <div className="glass" style={{
+          position: 'sticky',
+          top: 54,
+          zIndex: 99,
+          padding: '10px 16px',
+          borderLeft: 'none',
+          borderRight: 'none',
+          borderTop: 'none',
+          borderRadius: 0,
+          animation: 'fadeIn 0.15s ease',
+        }}>
+          <form onSubmit={handleSearch}>
+            <input
+              className="glass-input"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search sessions…"
+              autoFocus
+              style={{ fontSize: 16, padding: '10px 14px', borderRadius: 10 }}
+            />
+          </form>
+        </div>
+      )}
+    </>
   )
 }
