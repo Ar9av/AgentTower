@@ -133,7 +133,8 @@ function SearchInner() {
 }
 
 function encodeFilepath(filepath: string): string {
-  return Buffer.from(filepath).toString('base64url')
+  return btoa(unescape(encodeURIComponent(filepath)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
 export default function SearchPage() {
