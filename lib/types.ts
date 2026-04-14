@@ -95,6 +95,16 @@ export interface SessionInfo {
   meta: SessionMeta | null
 }
 
+// ─── Paginated session response ────────────────────────────────────────────
+
+export interface PaginatedSession {
+  firstMessage: ParsedMessage | null
+  messages: ParsedMessage[]
+  total: number
+  hiddenCount: number
+  hasMore: boolean
+}
+
 // ─── Process tracking ──────────────────────────────────────────────────────
 
 export interface ClaudeProcess {

@@ -6,6 +6,7 @@ import {
   RawContentBlock,
   ContentBlock,
   ParsedMessage,
+  PaginatedSession,
   ProjectInfo,
   SessionInfo,
   SessionMeta,
@@ -161,6 +162,52 @@ export function parseJsonlFile(filepath: string): ParsedMessage[] {
   if (cache.size >= MAX_CACHE_SIZE) evictOldest(cache)
   cache.set(filepath, { mtime, messages })
   return messages
+}
+
+export function parseJsonlFilePaginated(
+  filepath: string,
+  limit = 50,
+  olderThanUuid?: string               // load the next page older than this uuid
+): PaginatedSession {
+  const all = parseJsonlFile(filepath).filter(m => !m.isMeta)
+  const total = all.length
+
+  // First non-meta user message with real text
+  const firstMessage = all.find(m =>
+    m.type === 'user' &&
+    m.content.some(b => b.type === 'text' && b.text && !b.text.startsWith('<'))
+  ) ?? null
+
+  if (total === 0) return { firstMessage: null, messages: [], total: 0, hiddenCount: 0, hasMore: false }
+
+  let window: ParsedMessage[]
+  let hasMore: boolean
+
+  if (!olderThanUuid) {
+    // Initial load: last `limit` messages
+    window = all.slice(-limit)
+    hasMore = total > limit
+  } else {
+    // Paginate: find the index of the anchor and go backwards
+    const anchorIdx = all.findIndex(m => m.uuid === olderThanUuid)
+    if (anchorIdx <= 0) {
+      window = []
+      hasMore = false
+    } else {
+      const start = Math.max(0, anchorIdx - limit)
+      window = all.slice(start, anchorIdx)
+      hasMore = start > 0
+    }
+  }
+
+  // Don't duplicate the firstMessage inside the window if it's already there
+  const hiddenCount = Math.max(
+    0,
+    all.indexOf(window[0] ?? firstMessage!) -
+    (firstMessage ? all.indexOf(firstMessage) + 1 : 0)
+  )
+
+  return { firstMessage, messages: window, total, hiddenCount, hasMore }
 }
 
 export function extractFirstPrompt(messages: ParsedMessage[]): string {

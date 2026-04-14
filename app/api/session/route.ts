@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
-import { parseJsonlFile, decodeB64, safePath, getClaudeDir } from '@/lib/claude-fs'
+import { parseJsonlFilePaginated, decodeB64, safePath, getClaudeDir } from '@/lib/claude-fs'
 
 export async function GET(req: NextRequest) {
   const authErr = await requireAuth(req)
@@ -14,5 +14,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid path' }, { status: 403 })
   }
 
-  return NextResponse.json(parseJsonlFile(filepath))
+  const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') ?? '50', 10), 200)
+  const olderThan = req.nextUrl.searchParams.get('before') ?? undefined
+
+  return NextResponse.json(parseJsonlFilePaginated(filepath, limit, olderThan))
 }
