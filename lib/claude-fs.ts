@@ -576,3 +576,17 @@ export function readNewLines(filepath: string, state: TailState): { lines: strin
   const newOffset = state.offset + buf.length
   return { lines, newOffset }
 }
+
+/** Find the project working directory for a given Claude session ID. */
+export function findSessionProjectCwd(sessionId: string): string | null {
+  const projectsDir = path.join(process.env.CLAUDE_DIR || path.join(os.homedir(), ".claude"), "projects")
+  let dirs: string[]
+  try { dirs = fs.readdirSync(projectsDir) } catch { return null }
+  for (const d of dirs) {
+    const sessionFile = path.join(projectsDir, d, `${sessionId}.jsonl`)
+    if (fs.existsSync(sessionFile)) {
+      return decodeProjectPath(d)
+    }
+  }
+  return null
+}
