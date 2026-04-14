@@ -2,7 +2,7 @@
 
 > **For AI agents:** Read [`AGENTS.md`](./AGENTS.md) first — it has a complete automated setup script and exact commands to get this running without human interaction (except asking for a password). For a full step-by-step human walkthrough, see [`SETUP.md`](./SETUP.md).
 
-A Next.js web UI for monitoring, searching, and controlling Claude Code sessions in real time. Reads Claude Code's JSONL session logs from `~/.claude/projects/`, streams them live via SSE, and lets you send input, kill, pause, or resume any running Claude process — all from a browser.
+UI for monitoring, searching, and controlling Claude Code sessions in real time. Reads Claude Code's JSONL session logs from `~/.claude/projects/`, streams them live via SSE, and lets you send input, kill, pause, or resume any running Claude process — all from a browser.
 
 ---
 
