@@ -51,11 +51,13 @@ export default function LiveSession({
   const [waitingForReply, setWaitingForReply] = useState(false)
 
   const [replyTimedOut, setReplyTimedOut]   = useState(false)
+  const [continuationUrl, setContinuationUrl] = useState<string | null>(null)
 
-  const bottomRef        = useRef<HTMLDivElement>(null)
-  const containerRef     = useRef<HTMLDivElement>(null)
-  const atBottomRef      = useRef(true)
-  const replyTimeoutRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const bottomRef           = useRef<HTMLDivElement>(null)
+  const containerRef        = useRef<HTMLDivElement>(null)
+  const atBottomRef         = useRef(true)
+  const replyTimeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const continuationPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const seenUuids    = useRef(new Set([
     ...(initialData.firstMessage ? [initialData.firstMessage.uuid] : []),
     ...initialData.messages.map(m => m.uuid),
@@ -158,6 +160,45 @@ export default function LiveSession({
     }
   }
 
+  // Poll /api/recent-sessions to find the continuation session Claude spawned
+  function watchForContinuation(sentAt: number) {
+    if (continuationPollRef.current) clearInterval(continuationPollRef.current)
+    setContinuationUrl(null)
+    let attempts = 0
+
+    continuationPollRef.current = setInterval(async () => {
+      attempts++
+      if (attempts > 20) { // give up after ~40s
+        clearInterval(continuationPollRef.current!)
+        continuationPollRef.current = null
+        return
+      }
+      try {
+        const res = await fetch('/api/recent-sessions?limit=5')
+        if (!res.ok) return
+        const sessions: Array<{ mtime: number; encodedFilepath: string; firstPrompt: string }> = await res.json()
+        // Find a session newer than when we sent, that isn't the current one
+        const newer = sessions.find(s =>
+          s.mtime > sentAt - 500 &&
+          s.encodedFilepath !== encodedFilepath
+        )
+        if (newer) {
+          clearInterval(continuationPollRef.current!)
+          continuationPollRef.current = null
+          setWaitingForReply(false)
+          setProcState('dead')
+          setContinuationUrl(`/session?f=${newer.encodedFilepath}`)
+          if (replyTimeoutRef.current) {
+            clearTimeout(replyTimeoutRef.current)
+            replyTimeoutRef.current = null
+          }
+          // Remove stuck optimistic messages
+          setMessages(prev => prev.filter(m => !m.uuid.startsWith('__optimistic__')))
+        }
+      } catch { /* ignore */ }
+    }, 2000)
+  }
+
   // ── Actions ───────────────────────────────────────────────────────────────
   async function sendInput(e: React.FormEvent) {
     e.preventDefault()
@@ -208,19 +249,27 @@ export default function LiveSession({
       if (res.ok) {
         setProcState('running')
         setWaitingForReply(true)
+        const sentAt = Date.now()
 
-        // Safety timeout: if no reply arrives in 60s, stop showing the spinner.
-        // This happens when --resume writes to a continuation session (different file).
+        // If the session was already dead, the reply will land in a continuation session.
+        // Poll recent-sessions every 2s to find it (much faster than 60s timeout).
+        if (initialProcState === 'dead' || procState === 'dead') {
+          watchForContinuation(sentAt)
+        }
+
+        // Safety fallback: clear spinner after 60s if nothing found
         const replyTimeout = setTimeout(() => {
           setWaitingForReply(false)
           setProcState('dead')
-          // Remove the pending optimistic message
           setMessages(prev => prev.filter(m => m.uuid !== optimisticId))
           setTotal(t => t - 1)
           setReplyTimedOut(true)
+          if (continuationPollRef.current) {
+            clearInterval(continuationPollRef.current)
+            continuationPollRef.current = null
+          }
         }, 60_000)
 
-        // Store the timeout so SSE can cancel it
         replyTimeoutRef.current = replyTimeout
       } else {
         // Remove optimistic message on failure
@@ -454,8 +503,37 @@ export default function LiveSession({
             messages.map(msg => <MessageBlock key={msg.uuid} message={msg} encodedFilepath={encodedFilepath} />)
           )}
 
-          {/* Reply timed out — continuation probably went to a new session */}
-          {replyTimedOut && (
+          {/* Continuation session found — direct link */}
+          {continuationUrl && (
+            <div style={{
+              margin: '12px 0', padding: '12px 16px',
+              background: 'color-mix(in srgb, var(--green) 8%, var(--glass-bg))',
+              border: '1px solid color-mix(in srgb, var(--green) 25%, transparent)',
+              borderRadius: 12, fontSize: 13,
+              display: 'flex', alignItems: 'center', gap: 10,
+              animation: 'fadeIn 0.2s ease',
+            }}>
+              <span style={{ fontSize: 18 }}>↩</span>
+              <div>
+                <div style={{ color: 'var(--text)', fontWeight: 600, marginBottom: 2 }}>Claude replied in a new session</div>
+                <div style={{ color: 'var(--text2)', fontSize: 12 }}>Your message started a continuation thread</div>
+              </div>
+              <a
+                href={continuationUrl}
+                style={{
+                  marginLeft: 'auto', padding: '7px 16px', borderRadius: 8, flexShrink: 0,
+                  background: 'color-mix(in srgb, var(--green) 18%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--green) 35%, transparent)',
+                  color: 'var(--green)', fontWeight: 600, fontSize: 13, textDecoration: 'none',
+                }}
+              >
+                Open →
+              </a>
+            </div>
+          )}
+
+          {/* Reply timed out — fallback */}
+          {replyTimedOut && !continuationUrl && (
             <div style={{
               margin: '12px 0', padding: '10px 14px',
               background: 'color-mix(in srgb, var(--yellow) 8%, var(--glass-bg))',
@@ -464,7 +542,7 @@ export default function LiveSession({
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
               <span style={{ color: 'var(--yellow)' }}>⚠</span>
-              <span>Claude&apos;s reply may have gone to a new session — check <strong style={{ color: 'var(--text)' }}>Recent Sessions</strong> in the sidebar.</span>
+              <span>No reply detected — check <strong style={{ color: 'var(--text)' }}>Recent Sessions</strong> in the sidebar.</span>
             </div>
           )}
 
