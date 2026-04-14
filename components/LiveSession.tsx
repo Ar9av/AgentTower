@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { ParsedMessage, PaginatedSession } from '@/lib/types'
 import MessageBlock from './MessageBlock'
+import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment'
 import Link from 'next/link'
 
 type ProcState = 'running' | 'paused' | 'dead' | 'unknown'
@@ -42,9 +43,10 @@ export default function LiveSession({
   const [connected, setConnected]         = useState(false)
   const [procState, setProcState]         = useState<ProcState>(initialProcState)
   const [pid, setPid]                     = useState<number | null>(initialPid)
-  const [inputText, setInputText]         = useState('')
-  const [sending, setSending]             = useState(false)
+  const [inputText, setInputText]           = useState('')
+  const [sending, setSending]               = useState(false)
   const [wasInterrupted, setWasInterrupted] = useState(false)
+  const [attachedImage, setAttachedImage]   = useState<AttachedImage | null>(null)
 
   const bottomRef    = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -139,13 +141,31 @@ export default function LiveSession({
   // ── Actions ───────────────────────────────────────────────────────────────
   async function sendInput(e: React.FormEvent) {
     e.preventDefault()
-    if (!inputText.trim() || sending) return
+    if ((!inputText.trim() && !attachedImage) || sending) return
     setSending(true)
     try {
+      let prompt = inputText.trim()
+
+      // Upload image if attached, then append path to prompt
+      if (attachedImage) {
+        const uploadRes = await fetch('/api/upload-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: attachedImage.base64, mediaType: attachedImage.mediaType }),
+        })
+        if (uploadRes.ok) {
+          const { filepath } = await uploadRes.json()
+          prompt = prompt
+            ? `${prompt}\n\n[Image: ${filepath}]`
+            : `[Image: ${filepath}]`
+        }
+        setAttachedImage(null)
+      }
+
       const res = await fetch('/api/input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, prompt: inputText.trim() }),
+        body: JSON.stringify({ session_id: sessionId, prompt }),
       })
       if (res.ok) { setInputText(''); setProcState('running') }
     } finally { setSending(false) }
@@ -345,6 +365,8 @@ export default function LiveSession({
         procState={procState} wasInterrupted={wasInterrupted}
         inputText={inputText} setInputText={setInputText}
         sending={sending} isThinking={isThinking}
+        attachedImage={attachedImage}
+        onAttachImage={setAttachedImage}
         onSendInput={sendInput} onKillAndRestart={killAndRestart} onResumeProcess={resumeProcess}
         projectPath={projectPath}
       />
@@ -395,26 +417,43 @@ interface BarProps {
   procState: ProcState; wasInterrupted: boolean
   inputText: string; setInputText: (v: string) => void
   sending: boolean; isThinking: boolean
+  attachedImage: AttachedImage | null
+  onAttachImage: (img: AttachedImage | null) => void
   onSendInput: (e: React.FormEvent) => void
   onKillAndRestart: (e: React.FormEvent) => void
   onResumeProcess: () => void
   projectPath: string
 }
 
-function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending, isThinking, onSendInput, onKillAndRestart, onResumeProcess }: BarProps) {
+function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending, isThinking, attachedImage, onAttachImage, onSendInput, onKillAndRestart, onResumeProcess }: BarProps) {
   const base: React.CSSProperties = { flexShrink: 0, borderLeft: 'none', borderRight: 'none', borderBottom: 'none', borderRadius: 0 }
   const pad = 'clamp(10px,3vw,16px) clamp(12px,4vw,24px)'
+  const handlePaste = useImagePaste(onAttachImage)
+  const canSend = !!(inputText.trim() || attachedImage)
 
   if (procState === 'running') return (
     <div className="glass-lg" style={{ padding: pad, ...base }}>
-      <form onSubmit={onSendInput} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, maxWidth: 840, margin: '0 auto' }}>
-        <input className="glass-input" value={inputText} onChange={e => setInputText(e.target.value)}
-          placeholder={isThinking ? 'Claude is thinking — send a message…' : 'Send a message…'}
-          style={{ flex: '1 1 200px', fontSize: 15, padding: '10px 16px', borderRadius: 12 }} />
-        <button type="submit" className="glass-btn-prominent" disabled={!inputText.trim() || sending}
-          style={{ width: 'auto', padding: '10px 20px', fontSize: 14, flexShrink: 0 }}>
-          {sending ? '…' : 'Send'}
-        </button>
+      <form onSubmit={onSendInput} style={{ maxWidth: 840, margin: '0 auto' }}>
+        {/* Image preview row */}
+        {attachedImage && (
+          <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={attachedImage.dataUrl} alt="" style={{ height: 56, width: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--glass-border)', flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: 'var(--text2)' }}>{attachedImage.name}</span>
+            <button type="button" onClick={() => onAttachImage(null)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', marginLeft: 'auto', fontSize: 16, padding: 4 }}>✕</button>
+          </div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
+          <input className="glass-input" value={inputText} onChange={e => setInputText(e.target.value)}
+            onPaste={handlePaste}
+            placeholder={isThinking ? 'Claude is thinking — send a message…' : 'Send a message or paste an image…'}
+            style={{ flex: '1 1 160px', fontSize: 15, padding: '10px 16px', borderRadius: 12 }} />
+          <button type="submit" className="glass-btn-prominent" disabled={!canSend || sending}
+            style={{ width: 'auto', padding: '10px 20px', fontSize: 14, flexShrink: 0 }}>
+            {sending ? '…' : 'Send'}
+          </button>
+        </div>
       </form>
     </div>
   )
@@ -452,11 +491,13 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
           <span style={{ color: 'var(--text2)', fontSize: 12 }}>{wasInterrupted ? 'Resume or start fresh' : 'Continue or start a new session'}</span>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
           <input className="glass-input" value={inputText} onChange={e => setInputText(e.target.value)}
+            onPaste={handlePaste}
             placeholder="Continue or restart with a new prompt…"
             style={{ flex: '1 1 160px', fontSize: 15, padding: '10px 16px', borderRadius: 12 }} />
           <button className="glass-btn-prominent" onClick={onSendInput as unknown as React.MouseEventHandler}
-            disabled={!inputText.trim() || sending} style={{ width: 'auto', padding: '10px 18px', fontSize: 14, flexShrink: 0, minHeight: 44 }}>
+            disabled={!canSend || sending} style={{ width: 'auto', padding: '10px 18px', fontSize: 14, flexShrink: 0, minHeight: 44 }}>
             {sending ? '…' : 'Continue ↩'}
           </button>
           <button className="glass-btn" onClick={onKillAndRestart as unknown as React.MouseEventHandler}
