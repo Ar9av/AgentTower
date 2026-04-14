@@ -69,7 +69,7 @@ export default function Nav() {
             alt=""
             width={20}
             height={20}
-            style={{ filter: theme === 'dark' ? 'invert(1) sepia(1) saturate(3) hue-rotate(190deg)' : 'sepia(1) saturate(3) hue-rotate(190deg)', opacity: 0.9 }}
+            style={{ filter: theme === 'dark' ? 'brightness(0) invert(1)' : 'brightness(0)', opacity: theme === 'dark' ? 0.85 : 0.75 }}
           />
           <span
             className="hide-mobile"

@@ -60,7 +60,7 @@ export default function LoginPage() {
               alt="AgentTower"
               width={48}
               height={48}
-              style={{ filter: 'sepia(1) saturate(4) hue-rotate(340deg) brightness(0.7)', opacity: 0.9 }}
+              style={{ filter: 'brightness(0) invert(1)', opacity: 0.8 }}
             />
           </div>
           <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em' }}>
