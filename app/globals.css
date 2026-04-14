@@ -120,6 +120,7 @@ body {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .glass-input::placeholder { color: var(--text3); }
+textarea.glass-input { font-family: inherit; }
 .glass-input:focus {
   border-color: rgba(91,163,255,0.4);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 3px rgba(91,163,255,0.12);
