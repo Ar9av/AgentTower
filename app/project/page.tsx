@@ -32,19 +32,23 @@ export default async function ProjectPage({ searchParams }: Props) {
       <Nav />
       <main style={{ padding: '32px 28px', maxWidth: 1100, margin: '0 auto', width: '100%' }}>
         {/* Breadcrumb + header */}
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 28 }}>
           <Link href="/projects" style={{ color: 'var(--text2)', fontSize: 13, textDecoration: 'none' }}>
             ← Projects
           </Link>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginTop: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 10 }}>
             <div>
-              <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>
+              <h1 style={{ margin: '0 0 3px', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>
                 {projectPath.split('/').pop()}
               </h1>
               <p style={{ margin: 0, color: 'var(--text3)', fontSize: 12, fontFamily: 'ui-monospace, monospace' }}>
                 {projectPath}
               </p>
             </div>
+          </div>
+
+          {/* New session — full-width block below header */}
+          <div style={{ marginTop: 16 }}>
             <NewSessionForm projectPath={projectPath} />
           </div>
         </div>
