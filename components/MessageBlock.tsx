@@ -1,0 +1,167 @@
+'use client'
+import { ParsedMessage, ContentBlock } from '@/lib/types'
+
+function TextContent({ text }: { text: string }) {
+  // Very basic markdown: code fences → <pre>, inline code, bold, newlines
+  const lines = text.split('\n')
+  const parts: React.ReactNode[] = []
+  let inFence = false
+  let fenceLang = ''
+  let fenceLines: string[] = []
+  let key = 0
+
+  function flushFence() {
+    parts.push(
+      <pre key={key++} style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '10px 14px', overflowX: 'auto', fontSize: 13, margin: '8px 0', fontFamily: 'ui-monospace, monospace' }}>
+        <code>{fenceLines.join('\n')}</code>
+      </pre>
+    )
+    fenceLines = []
+    fenceLang = ''
+  }
+
+  for (const line of lines) {
+    if (!inFence && line.startsWith('```')) {
+      inFence = true
+      fenceLang = line.slice(3)
+      continue
+    }
+    if (inFence) {
+      if (line.startsWith('```')) {
+        inFence = false
+        flushFence()
+      } else {
+        fenceLines.push(line)
+      }
+      continue
+    }
+    // Inline: bold **x** and `code`
+    const segments = line.split(/(`[^`]+`|\*\*[^*]+\*\*)/)
+    const inline = segments.map((seg, i) => {
+      if (seg.startsWith('`') && seg.endsWith('`')) {
+        return <code key={i} style={{ background: 'var(--bg3)', padding: '1px 4px', borderRadius: 4, fontSize: 13, fontFamily: 'ui-monospace, monospace' }}>{seg.slice(1, -1)}</code>
+      }
+      if (seg.startsWith('**') && seg.endsWith('**')) {
+        return <strong key={i}>{seg.slice(2, -2)}</strong>
+      }
+      return seg
+    })
+    parts.push(<span key={key++}>{inline}<br /></span>)
+  }
+  if (inFence && fenceLines.length) flushFence()
+
+  return <div style={{ lineHeight: 1.6, fontSize: 14, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{parts}</div>
+}
+
+function ToolUseBlock({ block }: { block: ContentBlock }) {
+  return (
+    <details style={{ margin: '6px 0', background: 'rgba(192,132,252,0.06)', border: '1px solid rgba(192,132,252,0.18)', borderRadius: 8, backdropFilter: 'blur(8px)' }}>
+      <summary style={{ padding: '7px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--purple)', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
+        <span style={{ opacity: 0.8 }}>⚙</span> {block.tool_name}
+      </summary>
+      <pre style={{ margin: 0, padding: '8px 14px', fontSize: 12, overflowX: 'auto', borderTop: '1px solid rgba(192,132,252,0.15)', color: 'var(--text2)', fontFamily: 'ui-monospace, monospace' }}>
+        {JSON.stringify(block.tool_input, null, 2)}
+      </pre>
+    </details>
+  )
+}
+
+function ToolResultBlock({ block }: { block: ContentBlock }) {
+  const text = block.tool_result?.map(b => b.text ?? '').join('\n') ?? ''
+  const isError = block.is_error
+  return (
+    <details style={{
+      margin: '6px 0',
+      background: isError ? 'rgba(255,90,90,0.06)' : 'rgba(255,255,255,0.04)',
+      border: `1px solid ${isError ? 'rgba(255,90,90,0.25)' : 'rgba(255,255,255,0.08)'}`,
+      borderRadius: 8,
+      backdropFilter: 'blur(8px)',
+    }}>
+      <summary style={{ padding: '7px 12px', cursor: 'pointer', fontSize: 12, color: isError ? 'var(--red)' : 'var(--text2)', userSelect: 'none', fontWeight: 500 }}>
+        {isError ? '✗ Tool error' : '↩ Tool result'}
+      </summary>
+      <pre style={{
+        margin: 0, padding: '8px 14px', fontSize: 12, overflowX: 'auto',
+        borderTop: `1px solid ${isError ? 'rgba(255,90,90,0.2)' : 'rgba(255,255,255,0.07)'}`,
+        color: 'var(--text2)', fontFamily: 'ui-monospace, monospace', maxHeight: 300,
+      }}>
+        {text || '(empty)'}
+      </pre>
+    </details>
+  )
+}
+
+function ThinkingBlock({ block }: { block: ContentBlock }) {
+  return (
+    <details style={{ margin: '6px 0', background: 'rgba(245,200,66,0.05)', border: '1px solid rgba(245,200,66,0.18)', borderRadius: 8, backdropFilter: 'blur(8px)' }}>
+      <summary style={{ padding: '7px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--yellow)', userSelect: 'none', fontWeight: 500 }}>
+        💭 Thinking
+      </summary>
+      <div style={{ padding: '8px 14px', fontSize: 13, color: 'var(--text2)', borderTop: '1px solid rgba(245,200,66,0.15)', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
+        {block.thinking}
+      </div>
+    </details>
+  )
+}
+
+export default function MessageBlock({ message }: { message: ParsedMessage }) {
+  const isUser = message.type === 'user'
+  if (message.isMeta) return null
+
+  // Skip messages with only internal content blocks (attachments etc)
+  const displayBlocks = message.content.filter(b =>
+    b.type === 'text' || b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'thinking'
+  )
+  if (displayBlocks.length === 0) return null
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: isUser ? 'flex-end' : 'flex-start',
+      margin: '12px 0',
+    }}>
+      <div style={{
+        fontSize: 11,
+        color: 'var(--text2)',
+        marginBottom: 4,
+        paddingLeft: isUser ? 0 : 4,
+        paddingRight: isUser ? 4 : 0,
+      }}>
+        {isUser ? 'You' : 'Claude'} · {new Date(message.timestamp).toLocaleTimeString()}
+      </div>
+      <div style={{
+        maxWidth: '80%',
+        background: isUser
+          ? 'linear-gradient(135deg, rgba(91,163,255,0.75) 0%, rgba(61,100,240,0.75) 100%)'
+          : 'rgba(255,255,255,0.055)',
+        backdropFilter: isUser ? undefined : 'blur(16px) saturate(1.5)',
+        WebkitBackdropFilter: isUser ? undefined : 'blur(16px) saturate(1.5)',
+        color: 'var(--text)',
+        borderRadius: isUser ? '14px 14px 2px 14px' : '14px 14px 14px 2px',
+        padding: '11px 16px',
+        border: isUser
+          ? '1px solid rgba(91,163,255,0.4)'
+          : '1px solid rgba(255,255,255,0.09)',
+        boxShadow: isUser
+          ? 'inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 16px rgba(61,100,240,0.25)'
+          : 'inset 0 1px 0 rgba(255,255,255,0.10), 0 4px 20px rgba(0,0,0,0.25)',
+        width: isUser ? 'fit-content' : '100%',
+      }}>
+        {displayBlocks.map((block, i) => {
+          if (block.type === 'text') return <TextContent key={i} text={block.text ?? ''} />
+          if (block.type === 'tool_use') return <ToolUseBlock key={i} block={block} />
+          if (block.type === 'tool_result') return <ToolResultBlock key={i} block={block} />
+          if (block.type === 'thinking') return <ThinkingBlock key={i} block={block} />
+          return null
+        })}
+      </div>
+      {message.usage && (
+        <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 3, paddingRight: isUser ? 4 : 0 }}>
+          {message.usage.input_tokens}↑ {message.usage.output_tokens}↓
+          {message.usage.cache_read_input_tokens ? ` ${message.usage.cache_read_input_tokens} cached` : ''}
+        </div>
+      )}
+    </div>
+  )
+}
