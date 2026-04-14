@@ -43,6 +43,14 @@ export default function Nav() {
         alignItems: 'center',
         gap: 8,
       }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="https://cdn-icons-png.flaticon.com/512/3016/3016606.png"
+          alt=""
+          width={22}
+          height={22}
+          style={{ filter: 'invert(1) sepia(1) saturate(3) hue-rotate(190deg)', opacity: 0.85 }}
+        />
         <span style={{
           background: 'linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%)',
           WebkitBackgroundClip: 'text',

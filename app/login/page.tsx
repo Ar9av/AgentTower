@@ -53,19 +53,15 @@ export default function LoginPage() {
       }}>
         {/* Logo mark */}
         <div style={{ marginBottom: 28 }}>
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            background: 'rgba(91,163,255,0.15)',
-            border: '1px solid rgba(91,163,255,0.3)',
-            marginBottom: 16,
-            fontSize: 22,
-          }}>
-            🗼
+          <div style={{ marginBottom: 16 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://cdn-icons-png.flaticon.com/512/3016/3016606.png"
+              alt="AgentTower"
+              width={48}
+              height={48}
+              style={{ filter: 'invert(1) sepia(1) saturate(3) hue-rotate(190deg)', opacity: 0.9 }}
+            />
           </div>
           <h1 style={{
             margin: '0 0 4px',
