@@ -40,13 +40,15 @@ export default function LiveSession({
   const [loadingMore, setLoadingMore]     = useState(false)
 
   // ── process / UI state ────────────────────────────────────────────────────
-  const [connected, setConnected]         = useState(false)
-  const [procState, setProcState]         = useState<ProcState>(initialProcState)
-  const [pid, setPid]                     = useState<number | null>(initialPid)
+  const [connected, setConnected]           = useState(false)
+  const [procState, setProcState]           = useState<ProcState>(initialProcState)
+  const [pid, setPid]                       = useState<number | null>(initialPid)
   const [inputText, setInputText]           = useState('')
   const [sending, setSending]               = useState(false)
   const [wasInterrupted, setWasInterrupted] = useState(false)
   const [attachedImage, setAttachedImage]   = useState<AttachedImage | null>(null)
+  // Optimistic "waiting for Claude" — set true immediately after send, cleared when assistant replies
+  const [waitingForReply, setWaitingForReply] = useState(false)
 
   const bottomRef    = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -81,8 +83,16 @@ export default function LiveSession({
           const msg: ParsedMessage = data.message
           if (!seenUuids.current.has(msg.uuid)) {
             seenUuids.current.add(msg.uuid)
-            setMessages(prev => [...prev, msg])
+            setMessages(prev => {
+              // Remove any optimistic placeholder that matches this user message
+              const filtered = prev.filter(m =>
+                !(m.uuid.startsWith('__optimistic__') && m.type === 'user' && msg.type === 'user')
+              )
+              return [...filtered, msg]
+            })
             setTotal(t => t + 1)
+            // Claude replied — clear the waiting indicator
+            if (msg.type === 'assistant') setWaitingForReply(false)
           }
         }
       } catch { /* ignore */ }
@@ -143,10 +153,30 @@ export default function LiveSession({
     e.preventDefault()
     if ((!inputText.trim() && !attachedImage) || sending) return
     setSending(true)
-    try {
-      let prompt = inputText.trim()
 
-      // Upload image if attached, then append path to prompt
+    let prompt = inputText.trim()
+
+    // 1. Optimistically add the user message to the UI immediately
+    const optimisticId = `__optimistic__${Date.now()}`
+    const optimisticMsg: ParsedMessage = {
+      uuid: optimisticId,
+      parentUuid: null,
+      type: 'user',
+      role: 'user',
+      timestamp: new Date().toISOString(),
+      isMeta: false,
+      isSidechain: false,
+      sessionId,
+      content: [{ type: 'text', text: attachedImage ? `${prompt}${prompt ? '\n' : ''}[Image attached]` : prompt }],
+    }
+    setMessages(prev => [...prev, optimisticMsg])
+    setTotal(t => t + 1)
+    setInputText('')
+    setAttachedImage(null)
+    atBottomRef.current = true // force scroll to bottom
+
+    try {
+      // 2. Upload image if attached
       if (attachedImage) {
         const uploadRes = await fetch('/api/upload-image', {
           method: 'POST',
@@ -155,20 +185,28 @@ export default function LiveSession({
         })
         if (uploadRes.ok) {
           const { filepath } = await uploadRes.json()
-          prompt = prompt
-            ? `${prompt}\n\n[Image: ${filepath}]`
-            : `[Image: ${filepath}]`
+          prompt = prompt ? `${prompt}\n\n[Image: ${filepath}]` : `[Image: ${filepath}]`
         }
-        setAttachedImage(null)
       }
 
+      // 3. Send to Claude
       const res = await fetch('/api/input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId, prompt }),
       })
-      if (res.ok) { setInputText(''); setProcState('running') }
-    } finally { setSending(false) }
+      if (res.ok) {
+        setProcState('running')
+        setWaitingForReply(true)  // show thinking indicator immediately
+      } else {
+        // Remove optimistic message on failure
+        setMessages(prev => prev.filter(m => m.uuid !== optimisticId))
+        setTotal(t => t - 1)
+        setInputText(prompt) // restore input
+      }
+    } finally {
+      setSending(false)
+    }
   }
 
   async function resumeProcess() {
@@ -206,7 +244,8 @@ export default function LiveSession({
   const isRunning  = procState === 'running'
   const isPaused   = procState === 'paused'
   const isDead     = procState === 'dead' || procState === 'unknown'
-  const isThinking = isRunning && lastRole(messages) === 'user'
+  // isThinking: either process state says so, or we just sent and are waiting for the reply
+  const isThinking = (isRunning && lastRole(messages) === 'user') || waitingForReply
 
   // Is the firstMessage already in the visible window?
   const firstInWindow = firstMessage && messages.some(m => m.uuid === firstMessage.uuid)
@@ -445,12 +484,20 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
         )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
-          <input className="glass-input" value={inputText} onChange={e => setInputText(e.target.value)}
+          <textarea
+            className="glass-input"
+            value={inputText}
+            onChange={e => setInputText(e.target.value)}
             onPaste={handlePaste}
-            placeholder={isThinking ? 'Claude is thinking — send a message…' : 'Send a message or paste an image…'}
-            style={{ flex: '1 1 160px', fontSize: 15, padding: '10px 16px', borderRadius: 12 }} />
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSendInput(e) }
+            }}
+            placeholder={isThinking ? 'Claude is thinking — you can keep typing…' : 'Message Claude… (Enter to send, Shift+Enter for newline)'}
+            rows={1}
+            style={{ flex: '1 1 160px', fontSize: 15, padding: '10px 16px', borderRadius: 12, resize: 'none', lineHeight: 1.5, maxHeight: 160, overflowY: 'auto' }}
+          />
           <button type="submit" className="glass-btn-prominent" disabled={!canSend || sending}
-            style={{ width: 'auto', padding: '10px 20px', fontSize: 14, flexShrink: 0 }}>
+            style={{ width: 'auto', padding: '10px 20px', fontSize: 14, flexShrink: 0, alignSelf: 'flex-end' }}>
             {sending ? '…' : 'Send'}
           </button>
         </div>

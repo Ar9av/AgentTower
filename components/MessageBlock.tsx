@@ -149,6 +149,7 @@ export default function MessageBlock({
   encodedFilepath?: string
 }) {
   const isUser = message.type === 'user'
+  const isPending = message.uuid.startsWith('__optimistic__')
   if (message.isMeta) return null
 
   // Skip messages with only internal content blocks (attachments etc)
@@ -162,6 +163,8 @@ export default function MessageBlock({
       display: 'flex',
       flexDirection: 'column',
       alignItems: isUser ? 'flex-end' : 'flex-start',
+      opacity: isPending ? 0.65 : 1,
+      transition: 'opacity 0.3s ease',
       margin: '12px 0',
     }}>
       <div style={{
@@ -200,7 +203,12 @@ export default function MessageBlock({
           return null
         })}
       </div>
-      {message.usage && (
+      {isPending && (
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3, paddingRight: 4 }}>
+          Sending…
+        </div>
+      )}
+      {message.usage && !isPending && (
         <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 3, paddingRight: isUser ? 4 : 0 }}>
           {message.usage.input_tokens}↑ {message.usage.output_tokens}↓
           {message.usage.cache_read_input_tokens ? ` ${message.usage.cache_read_input_tokens} cached` : ''}
