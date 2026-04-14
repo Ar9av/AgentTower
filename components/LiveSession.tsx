@@ -50,9 +50,12 @@ export default function LiveSession({
   // Optimistic "waiting for Claude" — set true immediately after send, cleared when assistant replies
   const [waitingForReply, setWaitingForReply] = useState(false)
 
-  const bottomRef    = useRef<HTMLDivElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const atBottomRef  = useRef(true)
+  const [replyTimedOut, setReplyTimedOut]   = useState(false)
+
+  const bottomRef        = useRef<HTMLDivElement>(null)
+  const containerRef     = useRef<HTMLDivElement>(null)
+  const atBottomRef      = useRef(true)
+  const replyTimeoutRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const seenUuids    = useRef(new Set([
     ...(initialData.firstMessage ? [initialData.firstMessage.uuid] : []),
     ...initialData.messages.map(m => m.uuid),
@@ -91,8 +94,15 @@ export default function LiveSession({
               return [...filtered, msg]
             })
             setTotal(t => t + 1)
-            // Claude replied — clear the waiting indicator
-            if (msg.type === 'assistant') setWaitingForReply(false)
+            // Claude replied — clear the waiting indicator and cancel timeout
+            if (msg.type === 'assistant') {
+              setWaitingForReply(false)
+              setReplyTimedOut(false)
+              if (replyTimeoutRef.current) {
+                clearTimeout(replyTimeoutRef.current)
+                replyTimeoutRef.current = null
+              }
+            }
           }
         }
       } catch { /* ignore */ }
@@ -197,7 +207,21 @@ export default function LiveSession({
       })
       if (res.ok) {
         setProcState('running')
-        setWaitingForReply(true)  // show thinking indicator immediately
+        setWaitingForReply(true)
+
+        // Safety timeout: if no reply arrives in 60s, stop showing the spinner.
+        // This happens when --resume writes to a continuation session (different file).
+        const replyTimeout = setTimeout(() => {
+          setWaitingForReply(false)
+          setProcState('dead')
+          // Remove the pending optimistic message
+          setMessages(prev => prev.filter(m => m.uuid !== optimisticId))
+          setTotal(t => t - 1)
+          setReplyTimedOut(true)
+        }, 60_000)
+
+        // Store the timeout so SSE can cancel it
+        replyTimeoutRef.current = replyTimeout
       } else {
         // Remove optimistic message on failure
         setMessages(prev => prev.filter(m => m.uuid !== optimisticId))
@@ -381,8 +405,22 @@ export default function LiveSession({
             messages.map(msg => <MessageBlock key={msg.uuid} message={msg} encodedFilepath={encodedFilepath} />)
           )}
 
+          {/* Reply timed out — continuation probably went to a new session */}
+          {replyTimedOut && (
+            <div style={{
+              margin: '12px 0', padding: '10px 14px',
+              background: 'color-mix(in srgb, var(--yellow) 8%, var(--glass-bg))',
+              border: '1px solid color-mix(in srgb, var(--yellow) 25%, transparent)',
+              borderRadius: 10, fontSize: 13, color: 'var(--text2)',
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ color: 'var(--yellow)' }}>⚠</span>
+              <span>Claude&apos;s reply may have gone to a new session — check <strong style={{ color: 'var(--text)' }}>Recent Sessions</strong> in the sidebar.</span>
+            </div>
+          )}
+
           {/* Thinking indicator */}
-          {isThinking && (
+          {isThinking && !replyTimedOut && (
             <div style={{ display: 'flex', justifyContent: 'flex-start', margin: '12px 0' }}>
               <div style={{
                 background: 'rgba(255,255,255,0.055)', backdropFilter: 'blur(16px)',
