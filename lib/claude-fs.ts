@@ -261,6 +261,74 @@ export function getSessionId(filepath: string): string {
   return path.basename(filepath, '.jsonl')
 }
 
+// ─── Recent sessions (cross-project, for sidebar) ─────────────────────────
+
+export interface RecentSession {
+  sessionId: string
+  filepath: string
+  encodedFilepath: string
+  projectDirName: string
+  projectDisplayName: string
+  firstPrompt: string
+  mtime: number
+  isActive: boolean
+}
+
+export function getRecentSessions(limit = 20): RecentSession[] {
+  const projectsDir = getProjectsDir()
+  const running = scanClaudeSessions(getClaudeDir())
+  const activeSessionIds = new Set(Object.keys(running))
+  const now = Date.now()
+  const activeThreshold = getActiveThreshold()
+  const results: RecentSession[] = []
+
+  let projectDirs: string[]
+  try { projectDirs = fs.readdirSync(projectsDir) } catch { return [] }
+
+  for (const dirName of projectDirs) {
+    const dirPath = path.join(projectsDir, dirName)
+    let stat: fs.Stats
+    try { stat = fs.statSync(dirPath); if (!stat.isDirectory()) continue } catch { continue }
+
+    let files: string[]
+    try { files = fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl')) } catch { continue }
+
+    for (const file of files) {
+      const filepath = path.join(dirPath, file)
+      const sessionId = path.basename(file, '.jsonl')
+      let mtime: number
+      try { mtime = fs.statSync(filepath).mtimeMs } catch { continue }
+
+      const isActive = activeSessionIds.has(sessionId) || (now - mtime < activeThreshold * 1000)
+      const decodedPath = decodeProjectPath(dirName)
+
+      // Only read first prompt from cache if available, else skip heavy parse
+      const cache = getCache()
+      const cacheKey = filepath
+      const cached = cache.get(cacheKey)
+      let firstPrompt = '(no prompt)'
+      if (cached && cached.mtime === Math.floor(mtime)) {
+        firstPrompt = extractFirstPrompt(cached.messages)
+      }
+
+      results.push({
+        sessionId,
+        filepath,
+        encodedFilepath: encodeB64(filepath),
+        projectDirName: dirName,
+        projectDisplayName: path.basename(decodedPath) || decodedPath,
+        firstPrompt,
+        mtime,
+        isActive,
+      })
+    }
+  }
+
+  return results
+    .sort((a, b) => b.mtime - a.mtime)
+    .slice(0, limit)
+}
+
 // ─── Session metadata ──────────────────────────────────────────────────────
 
 export function loadSessionMeta(sessionId: string): SessionMeta | null {

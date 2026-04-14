@@ -3,10 +3,12 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import Link from 'next/link'
 import { useTheme } from './ThemeProvider'
+import { useSidebar } from './SidebarProvider'
 
 export default function Nav() {
   const router = useRouter()
   const { theme, toggle } = useTheme()
+  const { toggle: toggleSidebar } = useSidebar()
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
 
@@ -40,6 +42,16 @@ export default function Nav() {
         borderTop: 'none',
         borderRadius: 0,
       }}>
+        {/* Hamburger — mobile only */}
+        <button
+          className="glass-btn show-mobile"
+          onClick={toggleSidebar}
+          style={{ padding: '8px 10px', minHeight: 36, fontSize: 17, flexShrink: 0 }}
+          aria-label="Open recent sessions"
+        >
+          ☰
+        </button>
+
         {/* Logo */}
         <Link href="/projects" style={{
           fontWeight: 700,
