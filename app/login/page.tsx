@@ -60,18 +60,10 @@ export default function LoginPage() {
               alt="AgentTower"
               width={48}
               height={48}
-              style={{ filter: 'invert(1) sepia(1) saturate(3) hue-rotate(190deg)', opacity: 0.9 }}
+              style={{ filter: 'sepia(1) saturate(4) hue-rotate(340deg) brightness(0.7)', opacity: 0.9 }}
             />
           </div>
-          <h1 style={{
-            margin: '0 0 4px',
-            fontSize: 24,
-            fontWeight: 700,
-            background: 'linear-gradient(135deg, var(--text) 0%, var(--text2) 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            letterSpacing: '-0.02em',
-          }}>
+          <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em' }}>
             AgentTower
           </h1>
           <p style={{ margin: 0, color: 'var(--text2)', fontSize: 14 }}>
