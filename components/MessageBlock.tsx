@@ -104,13 +104,47 @@ function ThinkingBlock({ block }: { block: ContentBlock }) {
   )
 }
 
-export default function MessageBlock({ message }: { message: ParsedMessage }) {
+function ImageBlock({ block, message, encodedFilepath }: { block: ContentBlock; message: ParsedMessage; encodedFilepath?: string }) {
+  const src = encodedFilepath
+    ? `/api/image?f=${encodedFilepath}&uuid=${message.uuid}&idx=${block.imageBlockIdx ?? 0}`
+    : null
+
+  if (!src) return (
+    <div style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic' }}>[image]</div>
+  )
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt="Session image"
+      style={{
+        maxWidth: '100%',
+        maxHeight: 480,
+        borderRadius: 8,
+        border: '1px solid rgba(255,255,255,0.08)',
+        display: 'block',
+        marginTop: 6,
+        objectFit: 'contain',
+      }}
+      loading="lazy"
+    />
+  )
+}
+
+export default function MessageBlock({
+  message,
+  encodedFilepath,
+}: {
+  message: ParsedMessage
+  encodedFilepath?: string
+}) {
   const isUser = message.type === 'user'
   if (message.isMeta) return null
 
   // Skip messages with only internal content blocks (attachments etc)
   const displayBlocks = message.content.filter(b =>
-    b.type === 'text' || b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'thinking'
+    b.type === 'text' || b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'thinking' || b.type === 'image'
   )
   if (displayBlocks.length === 0) return null
 
@@ -153,6 +187,7 @@ export default function MessageBlock({ message }: { message: ParsedMessage }) {
           if (block.type === 'tool_use') return <ToolUseBlock key={i} block={block} />
           if (block.type === 'tool_result') return <ToolResultBlock key={i} block={block} />
           if (block.type === 'thinking') return <ThinkingBlock key={i} block={block} />
+          if (block.type === 'image') return <ImageBlock key={i} block={block} message={message} encodedFilepath={encodedFilepath} />
           return null
         })}
       </div>

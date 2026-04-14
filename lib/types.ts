@@ -9,6 +9,9 @@ export interface ContentBlock {
   tool_result?: ContentBlock[]
   thinking?: string
   is_error?: boolean
+  // image — reference only (base64 never stored in memory)
+  imageMediaType?: string   // e.g. "image/png"
+  imageBlockIdx?: number    // position in the raw content array
 }
 
 export interface ParsedMessage {

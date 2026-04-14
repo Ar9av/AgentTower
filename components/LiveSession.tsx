@@ -253,7 +253,7 @@ export default function LiveSession({
                   Original instruction
                 </span>
               </div>
-              <MessageBlock message={firstMessage} />
+              <MessageBlock message={firstMessage} encodedFilepath={encodedFilepath} />
 
               {/* Load more / hidden count divider */}
               <div style={{
@@ -315,7 +315,7 @@ export default function LiveSession({
               <p>No messages yet</p>
             </div>
           ) : (
-            messages.map(msg => <MessageBlock key={msg.uuid} message={msg} />)
+            messages.map(msg => <MessageBlock key={msg.uuid} message={msg} encodedFilepath={encodedFilepath} />)
           )}
 
           {/* Thinking indicator */}

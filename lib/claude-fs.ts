@@ -83,16 +83,11 @@ function evictOldest(cache: Map<string, CacheEntry>) {
 function parseContentBlocks(raw: string | RawContentBlock[] | undefined): ContentBlock[] {
   if (!raw) return []
   if (typeof raw === 'string') return [{ type: 'text', text: raw }]
-  return raw.map((b): ContentBlock => {
+  return raw.map((b, idx): ContentBlock => {
     if (b.type === 'text') return { type: 'text', text: b.text ?? '' }
     if (b.type === 'thinking') return { type: 'thinking', thinking: b.thinking ?? '' }
     if (b.type === 'tool_use') {
-      return {
-        type: 'tool_use',
-        tool_name: b.name ?? '',
-        tool_id: b.id,
-        tool_input: b.input ?? {},
-      }
+      return { type: 'tool_use', tool_name: b.name ?? '', tool_id: b.id, tool_input: b.input ?? {} }
     }
     if (b.type === 'tool_result') {
       const inner = b.content
@@ -103,8 +98,44 @@ function parseContentBlocks(raw: string | RawContentBlock[] | undefined): Conten
           : []
       return { type: 'tool_result', tool_id: b.id, tool_result: resultBlocks, is_error: b.is_error }
     }
+    if (b.type === 'image') {
+      // Store only a lightweight reference — base64 data is never kept in memory.
+      // The /api/image route decodes it on demand from the raw JSONL.
+      const src = b as unknown as { source?: { media_type?: string } }
+      return {
+        type: 'image',
+        imageMediaType: src.source?.media_type ?? 'image/png',
+        imageBlockIdx: idx,
+      }
+    }
     return { type: 'text', text: JSON.stringify(b) }
   })
+}
+
+// Extract raw base64 image data directly from the JSONL file for a specific message+block.
+// Called by the /api/image route — avoids holding base64 in the parse cache.
+export function extractImageData(
+  filepath: string,
+  messageUuid: string,
+  blockIdx: number
+): { data: string; mediaType: string } | null {
+  let raw: string
+  try { raw = fs.readFileSync(filepath, 'utf-8') } catch { return null }
+
+  for (const line of raw.split('\n')) {
+    const t = line.trim()
+    if (!t) continue
+    try {
+      const obj = JSON.parse(t) as RawJSONLLine
+      if (obj.uuid !== messageUuid) continue
+      const content = obj.message?.content
+      if (!Array.isArray(content)) return null
+      const block = content[blockIdx] as unknown as { type: string; source?: { type?: string; media_type?: string; data?: string } }
+      if (block?.type !== 'image' || block.source?.type !== 'base64') return null
+      return { data: block.source.data ?? '', mediaType: block.source.media_type ?? 'image/png' }
+    } catch { continue }
+  }
+  return null
 }
 
 export function parseJsonlFile(filepath: string): ParsedMessage[] {
