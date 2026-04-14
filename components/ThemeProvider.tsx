@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useLayoutEffect, useState } from 'react'
 
 type Theme = 'dark' | 'light'
 
@@ -13,8 +13,8 @@ export function useTheme() { return useContext(ThemeCtx) }
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>('dark')
 
-  useEffect(() => {
-    // Read from localStorage or system preference
+  // useLayoutEffect runs synchronously before paint — no flash, no script tag needed
+  useLayoutEffect(() => {
     const stored = localStorage.getItem('clv-theme') as Theme | null
     const preferred = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
     const resolved = stored ?? preferred
@@ -31,14 +31,3 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
 
   return <ThemeCtx.Provider value={{ theme, toggle }}>{children}</ThemeCtx.Provider>
 }
-
-// Inline script injected into <head> to set theme before first paint — prevents flash
-export const themeScript = `
-(function(){
-  try {
-    var t = localStorage.getItem('clv-theme');
-    if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', t);
-  } catch(e){}
-})();
-`

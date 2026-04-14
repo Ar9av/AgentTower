@@ -44,8 +44,31 @@
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   Light mode — warm neutrals, amber accent, no "corporate blue"
+   Light mode — applied by JS (data-theme="light") OR system pref.
+   The @media block is the CSS-only no-flash fallback before hydration.
+   [data-theme="light"] wins after JS runs (more specific selector).
 ══════════════════════════════════════════════════════════════════ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg:   #f5f2ee; --bg2: #faf8f5; --bg3: #ede9e3;
+    --bg-mesh: radial-gradient(ellipse 70% 50% at 15% 5%,  #ffe8cc 0%, transparent 55%),
+               radial-gradient(ellipse 55% 45% at 85% 85%, #fce4d6 0%, transparent 50%),
+               radial-gradient(ellipse 45% 35% at 55% 40%, #fff1e6 0%, transparent 45%),
+               #f5f2ee;
+    --glass-bg: rgba(255,253,249,0.78); --glass-bg-hover: rgba(255,253,249,0.92);
+    --glass-bg-active: rgba(255,253,249,0.98);
+    --glass-border: rgba(60,30,0,0.09); --glass-border-hi: rgba(60,30,0,0.16);
+    --glass-blur: blur(18px) saturate(1.3); --glass-blur-lg: blur(28px) saturate(1.5);
+    --specular: inset 0 1px 0 rgba(255,255,255,0.95);
+    --text: #1c1610; --text2: #6b5d4f; --text3: #a8998a;
+    --accent: #c2510a; --accent2: #a84208;
+    --green: #2d6e3e; --red: #b83232; --yellow: #9a6c00; --purple: #6b3fa0;
+    --shadow-card: 0 2px 12px rgba(60,30,0,0.08); --shadow-lg: 0 4px 24px rgba(60,30,0,0.12);
+    --orb1-color: rgba(220,130,60,0.14); --orb2-color: rgba(200,80,40,0.10); --orb3-color: rgba(240,160,80,0.10);
+  }
+}
+
 [data-theme="light"] {
   color-scheme: light;
 

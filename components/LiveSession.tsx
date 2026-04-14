@@ -264,6 +264,55 @@ export default function LiveSession({
     } finally { setSending(false) }
   }
 
+  // Stop current task then immediately send the typed message as a new session
+  async function stopAndResend(e: React.FormEvent) {
+    e.preventDefault()
+    if (!inputText.trim() || sending) return
+    setSending(true)
+    try {
+      if (pid) {
+        await fetch('/api/kill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pid }),
+        })
+        setPid(null)
+      }
+      // Small pause so the kill lands before spawning
+      await new Promise(r => setTimeout(r, 300))
+
+      const res = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_path: projectPath, prompt: inputText.trim() }),
+      })
+      if (res.ok) {
+        const { pid: newPid } = await res.json()
+        setPid(newPid)
+        setProcState('running')
+        setWasInterrupted(false)
+        setWaitingForReply(true)
+
+        // Optimistic user message
+        const optimisticId = `__optimistic__${Date.now()}`
+        setMessages(prev => [...prev, {
+          uuid: optimisticId, parentUuid: null, type: 'user', role: 'user',
+          timestamp: new Date().toISOString(), isMeta: false, isSidechain: false,
+          sessionId, content: [{ type: 'text', text: inputText.trim() }],
+        }])
+        setTotal(t => t + 1)
+        setInputText('')
+        atBottomRef.current = true
+
+        replyTimeoutRef.current = setTimeout(() => {
+          setWaitingForReply(false); setProcState('dead')
+          setMessages(prev => prev.filter(m => m.uuid !== optimisticId))
+          setTotal(t => t - 1); setReplyTimedOut(true)
+        }, 60_000)
+      }
+    } finally { setSending(false) }
+  }
+
   // ── Derived ───────────────────────────────────────────────────────────────
   const isRunning  = procState === 'running'
   const isPaused   = procState === 'paused'
@@ -444,8 +493,9 @@ export default function LiveSession({
         sending={sending} isThinking={isThinking}
         attachedImage={attachedImage}
         onAttachImage={setAttachedImage}
-        onSendInput={sendInput} onKillAndRestart={killAndRestart} onResumeProcess={resumeProcess}
-        projectPath={projectPath}
+        onSendInput={sendInput} onKillAndRestart={killAndRestart}
+        onResumeProcess={resumeProcess} onStopAndResend={stopAndResend}
+        projectPath={projectPath} pid={pid}
       />
 
       <style>{`
@@ -499,10 +549,12 @@ interface BarProps {
   onSendInput: (e: React.FormEvent) => void
   onKillAndRestart: (e: React.FormEvent) => void
   onResumeProcess: () => void
+  onStopAndResend: (e: React.FormEvent) => void
   projectPath: string
+  pid: number | null
 }
 
-function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending, isThinking, attachedImage, onAttachImage, onSendInput, onKillAndRestart, onResumeProcess }: BarProps) {
+function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending, isThinking, attachedImage, onAttachImage, onSendInput, onKillAndRestart, onResumeProcess, onStopAndResend, pid }: BarProps) {
   const base: React.CSSProperties = { flexShrink: 0, borderLeft: 'none', borderRight: 'none', borderBottom: 'none', borderRadius: 0 }
   const pad = 'clamp(10px,3vw,16px) clamp(12px,4vw,24px)'
   const handlePaste = useImagePaste(onAttachImage)
@@ -534,9 +586,23 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
             rows={1}
             style={{ flex: '1 1 160px', fontSize: 15, padding: '10px 16px', borderRadius: 12, resize: 'none', lineHeight: 1.5, maxHeight: 160, overflowY: 'auto' }}
           />
+          {/* Stop current task + resend — shown only when text is typed and Claude is running */}
+          {inputText.trim() && pid && isThinking && (
+            <button
+              type="button"
+              onClick={onStopAndResend}
+              disabled={sending}
+              className="glass-btn"
+              style={{ width: 'auto', padding: '10px 14px', fontSize: 13, flexShrink: 0, alignSelf: 'flex-end',
+                borderColor: 'color-mix(in srgb, var(--red) 35%, transparent)', color: 'var(--red)' }}
+              title="Kill current task and start a new session with this message"
+            >
+              {sending ? '…' : '⏹ Stop & resend'}
+            </button>
+          )}
           <button type="submit" className="glass-btn-prominent" disabled={!canSend || sending}
             style={{ width: 'auto', padding: '10px 20px', fontSize: 14, flexShrink: 0, alignSelf: 'flex-end' }}>
-            {sending ? '…' : 'Send'}
+            {sending ? '…' : isThinking ? 'Send anyway' : 'Send'}
           </button>
         </div>
       </form>
