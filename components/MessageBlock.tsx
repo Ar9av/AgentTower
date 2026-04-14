@@ -72,8 +72,10 @@ function ToolResultBlock({ block }: { block: ContentBlock }) {
   return (
     <details style={{
       margin: '6px 0',
-      background: isError ? 'rgba(255,90,90,0.06)' : 'rgba(255,255,255,0.04)',
-      border: `1px solid ${isError ? 'rgba(255,90,90,0.25)' : 'rgba(255,255,255,0.08)'}`,
+      background: isError
+        ? 'color-mix(in srgb, var(--red) 8%, var(--glass-bg))'
+        : 'var(--glass-bg)',
+      border: `1px solid ${isError ? 'color-mix(in srgb, var(--red) 28%, transparent)' : 'var(--glass-border)'}`,
       borderRadius: 8,
       backdropFilter: 'blur(8px)',
     }}>
@@ -82,8 +84,9 @@ function ToolResultBlock({ block }: { block: ContentBlock }) {
       </summary>
       <pre style={{
         margin: 0, padding: '8px 14px', fontSize: 12, overflowX: 'auto',
-        borderTop: `1px solid ${isError ? 'rgba(255,90,90,0.2)' : 'rgba(255,255,255,0.07)'}`,
+        borderTop: `1px solid var(--glass-border)`,
         color: 'var(--text2)', fontFamily: 'ui-monospace, monospace', maxHeight: 300,
+        background: 'var(--bg3)', borderRadius: '0 0 8px 8px',
       }}>
         {text || '(empty)'}
       </pre>
@@ -93,11 +96,17 @@ function ToolResultBlock({ block }: { block: ContentBlock }) {
 
 function ThinkingBlock({ block }: { block: ContentBlock }) {
   return (
-    <details style={{ margin: '6px 0', background: 'rgba(245,200,66,0.05)', border: '1px solid rgba(245,200,66,0.18)', borderRadius: 8, backdropFilter: 'blur(8px)' }}>
+    <details style={{
+      margin: '6px 0',
+      background: 'color-mix(in srgb, var(--yellow) 8%, var(--glass-bg))',
+      border: '1px solid color-mix(in srgb, var(--yellow) 22%, transparent)',
+      borderRadius: 8,
+      backdropFilter: 'blur(8px)',
+    }}>
       <summary style={{ padding: '7px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--yellow)', userSelect: 'none', fontWeight: 500 }}>
         💭 Thinking
       </summary>
-      <div style={{ padding: '8px 14px', fontSize: 13, color: 'var(--text2)', borderTop: '1px solid rgba(245,200,66,0.15)', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
+      <div style={{ padding: '8px 14px', fontSize: 13, color: 'var(--text2)', borderTop: '1px solid color-mix(in srgb, var(--yellow) 18%, transparent)', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
         {block.thinking}
       </div>
     </details>
@@ -167,11 +176,11 @@ export default function MessageBlock({
       <div style={{
         maxWidth: 'min(80%, 700px)',
         background: isUser
-          ? 'color-mix(in srgb, var(--accent) 80%, transparent)'
+          ? 'color-mix(in srgb, var(--accent) 22%, var(--glass-bg))'
           : 'var(--glass-bg)',
         backdropFilter: isUser ? undefined : 'blur(16px) saturate(1.5)',
         WebkitBackdropFilter: isUser ? undefined : 'blur(16px) saturate(1.5)',
-        color: isUser ? '#fff' : 'var(--text)',
+        color: 'var(--text)',
         borderRadius: isUser ? '14px 14px 2px 14px' : '14px 14px 14px 2px',
         padding: 'clamp(9px,2vw,12px) clamp(12px,2vw,16px)',
         border: isUser
