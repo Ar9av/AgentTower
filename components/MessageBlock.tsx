@@ -12,7 +12,7 @@ function TextContent({ text }: { text: string }) {
 
   function flushFence() {
     parts.push(
-      <pre key={key++} style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '10px 14px', overflowX: 'auto', fontSize: 13, margin: '8px 0', fontFamily: 'ui-monospace, monospace' }}>
+      <pre key={key++} style={{ background: 'var(--bg3)', border: '1px solid var(--glass-border)', borderRadius: 8, padding: '10px 14px', overflowX: 'auto', fontSize: 13, margin: '8px 0', fontFamily: 'ui-monospace, monospace' }}>
         <code>{fenceLines.join('\n')}</code>
       </pre>
     )

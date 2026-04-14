@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Script from 'next/script'
 import './globals.css'
 import ThemeProvider, { themeScript } from '@/components/ThemeProvider'
 import SidebarProvider from '@/components/SidebarProvider'
@@ -16,11 +17,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full">
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <body className="min-h-full flex flex-col" style={{ background: 'var(--bg-mesh)', color: 'var(--text)' }}>
+        {/* Runs before hydration — sets data-theme with no flash */}
+        <Script id="theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: themeScript }} />
         <ThemeProvider>
           <SidebarProvider>
             <Sidebar />

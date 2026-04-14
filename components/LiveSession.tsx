@@ -196,32 +196,36 @@ export default function LiveSession({
 
       {/* ── Header ────────────────────────────────────────────────────── */}
       <div className="glass-lg" style={{
-        padding: '10px 24px', display: 'flex', alignItems: 'center', gap: 14,
+        padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
         flexShrink: 0, borderLeft: 'none', borderRight: 'none', borderTop: 'none', borderRadius: 0,
+        minHeight: 48,
       }}>
-        <Link href="javascript:history.back()" style={{ color: 'var(--text2)', fontSize: 13, textDecoration: 'none' }}>← Back</Link>
+        <Link href="javascript:history.back()" style={{ color: 'var(--text2)', fontSize: 13, textDecoration: 'none', flexShrink: 0 }}>← Back</Link>
 
-        <span style={{
+        {/* Session ID — hide on very small screens */}
+        <span className="hide-mobile" style={{
           fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--text3)',
-          background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)',
+          background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
           borderRadius: 6, padding: '2px 8px',
         }}>{sessionId.slice(0, 16)}…</span>
 
+        {/* Live dot */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span className={connected ? 'dot-live' : ''} style={!connected ? {
-            width: 7, height: 7, borderRadius: '50%', background: 'var(--text3)', display: 'inline-block',
+            width: 6, height: 6, borderRadius: '50%', background: 'var(--text3)', display: 'inline-block',
           } : {}} />
           <span style={{ fontSize: 12, color: connected ? 'var(--green)' : 'var(--text3)' }}>
-            {connected ? 'Live' : 'Connecting…'}
+            {connected ? 'Live' : '…'}
           </span>
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span className="chip">{total} messages</span>
-          {isRunning && isThinking && <span className="chip chip-green"><span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span> Thinking…</span>}
+        {/* Status + controls — pushed right */}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="chip hide-mobile">{total} msgs</span>
+          {isRunning && isThinking && <span className="chip chip-green"><span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span><span className="hide-mobile"> Thinking…</span></span>}
           {isRunning && !isThinking && <span className="chip chip-green">Running</span>}
           {isPaused && <span className="chip chip-yellow">Paused</span>}
-          {isDead   && <span className="chip">{wasInterrupted ? 'Interrupted' : 'Finished'}</span>}
+          {isDead && <span className="chip">{wasInterrupted ? 'Interrupted' : 'Done'}</span>}
 
           {isRunning && pid && (
             <div style={{ display: 'flex', gap: 6 }}>
