@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { ParsedMessage, PaginatedSession } from '@/lib/types'
 import MessageBlock from './MessageBlock'
 import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 type ProcState = 'running' | 'paused' | 'dead' | 'unknown'
@@ -52,6 +53,7 @@ export default function LiveSession({
 
   const [replyTimedOut, setReplyTimedOut]   = useState(false)
   const [continuationUrl, setContinuationUrl] = useState<string | null>(null)
+  const router = useRouter()
 
   const bottomRef           = useRef<HTMLDivElement>(null)
   const containerRef        = useRef<HTMLDivElement>(null)
@@ -384,7 +386,12 @@ export default function LiveSession({
         flexShrink: 0, borderLeft: 'none', borderRight: 'none', borderTop: 'none', borderRadius: 0,
         minHeight: 48,
       }}>
-        <Link href="javascript:history.back()" style={{ color: 'var(--text2)', fontSize: 13, textDecoration: 'none', flexShrink: 0 }}>← Back</Link>
+        <button
+          onClick={() => router.back()}
+          style={{ background: 'none', border: 'none', color: 'var(--text2)', fontSize: 13, cursor: 'pointer', padding: 0, flexShrink: 0 }}
+        >
+          ← Back
+        </button>
 
         {/* Session ID — hide on very small screens */}
         <span className="hide-mobile" style={{
