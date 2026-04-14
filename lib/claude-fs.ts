@@ -54,21 +54,24 @@ export function safePath(filepath: string, baseDir: string): string | null {
 }
 
 // ─── Session cache ─────────────────────────────────────────────────────────
+// Bump CACHE_VERSION whenever the parser changes shape — invalidates all stale entries.
+const CACHE_VERSION = 2
 
 interface CacheEntry {
   mtime: number
   messages: ParsedMessage[]
 }
 
-const globalKey = '__clv_session_cache__'
+const globalKey = `__clv_session_cache_v${CACHE_VERSION}__`
 declare global {
   // eslint-disable-next-line no-var
-  var __clv_session_cache__: Map<string, CacheEntry> | undefined
+  var __clv_session_cache_v2__: Map<string, CacheEntry> | undefined
 }
 
 function getCache(): Map<string, CacheEntry> {
-  if (!global[globalKey]) global[globalKey] = new Map()
-  return global[globalKey]!
+  const k = globalKey as '__clv_session_cache_v2__'
+  if (!global[k]) global[k] = new Map()
+  return global[k]!
 }
 
 const MAX_CACHE_SIZE = 500
