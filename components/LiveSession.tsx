@@ -80,32 +80,35 @@ export default function LiveSession({
     const es = new EventSource(`/api/tail?f=${encodedFilepath}`)
     es.onopen  = () => setConnected(true)
     es.onerror = () => setConnected(false)
+    function handleMsg(msg: ParsedMessage) {
+      if (seenUuids.current.has(msg.uuid)) return
+      seenUuids.current.add(msg.uuid)
+      setMessages(prev => {
+        // Remove optimistic placeholder when the real user message arrives
+        const filtered = prev.filter(m =>
+          !(m.uuid.startsWith('__optimistic__') && m.type === 'user' && msg.type === 'user')
+        )
+        return [...filtered, msg]
+      })
+      setTotal(t => t + 1)
+      if (msg.type === 'assistant') {
+        setWaitingForReply(false)
+        setReplyTimedOut(false)
+        setContinuationUrl(null)
+        if (replyTimeoutRef.current) { clearTimeout(replyTimeoutRef.current); replyTimeoutRef.current = null }
+        if (continuationPollRef.current) { clearInterval(continuationPollRef.current); continuationPollRef.current = null }
+      }
+    }
+
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data)
-        if (data.type === 'catchup') return
-        if (data.type === 'message') {
-          const msg: ParsedMessage = data.message
-          if (!seenUuids.current.has(msg.uuid)) {
-            seenUuids.current.add(msg.uuid)
-            setMessages(prev => {
-              // Remove any optimistic placeholder that matches this user message
-              const filtered = prev.filter(m =>
-                !(m.uuid.startsWith('__optimistic__') && m.type === 'user' && msg.type === 'user')
-              )
-              return [...filtered, msg]
-            })
-            setTotal(t => t + 1)
-            // Claude replied — clear the waiting indicator and cancel timeout
-            if (msg.type === 'assistant') {
-              setWaitingForReply(false)
-              setReplyTimedOut(false)
-              if (replyTimeoutRef.current) {
-                clearTimeout(replyTimeoutRef.current)
-                replyTimeoutRef.current = null
-              }
-            }
-          }
+        // Handle BOTH catchup and live messages the same way — only skip if already seen.
+        // This is critical: EventSource auto-reconnects and resends catchup on reconnect.
+        // Any new replies that arrived during a disconnect come back as 'catchup' and
+        // were previously dropped. Now we process them if their uuid is unseen.
+        if (data.type === 'catchup' || data.type === 'message') {
+          handleMsg(data.message as ParsedMessage)
         }
       } catch { /* ignore */ }
     }

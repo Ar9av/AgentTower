@@ -1,9 +1,10 @@
 import { NextRequest } from 'next/server'
+import fs from 'fs'
 import { validateSession } from '@/lib/auth'
-import { decodeB64, safePath, getClaudeDir, parseJsonlFile, readNewLines } from '@/lib/claude-fs'
+import { decodeB64, safePath, getClaudeDir, parseJsonlFile } from '@/lib/claude-fs'
 
 const HEARTBEAT_INTERVAL = 15_000
-const POLL_INTERVAL = 1_500
+const POLL_INTERVAL = 1_000   // reduced to 1s for snappier live updates
 const CATCHUP_COUNT = 30
 
 export async function GET(req: NextRequest) {
@@ -22,30 +23,32 @@ export async function GET(req: NextRequest) {
 
   const stream = new ReadableStream({
     start(controller) {
-      // Send catchup: last CATCHUP_COUNT non-meta messages
-      const messages = parseJsonlFile(filepath)
-      const catchup = messages.filter(m => !m.isMeta).slice(-CATCHUP_COUNT)
-      for (const msg of catchup) {
-        const data = JSON.stringify({ type: 'catchup', message: msg })
-        controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+      function send(payload: string) {
+        try { controller.enqueue(encoder.encode(payload)); return true }
+        catch { return false }
       }
 
-      // Track file offset and known message count
+      // ── Read offset BEFORE parsing to avoid race condition ────────────────
+      // If we read offset AFTER parsing, any messages written between the two
+      // reads would be skipped forever (counted in offset but not in messageCount).
       let offset = 0
-      try {
-        const fs = require('fs') as typeof import('fs')
-        offset = fs.statSync(filepath).size
-      } catch {
-        // file might not exist yet
+      try { offset = fs.statSync(filepath).size } catch { /* file may not exist yet */ }
+
+      // ── Send catchup ──────────────────────────────────────────────────────
+      const initial = parseJsonlFile(filepath)
+      const catchup = initial.filter(m => !m.isMeta).slice(-CATCHUP_COUNT)
+      for (const msg of catchup) {
+        send(`data: ${JSON.stringify({ type: 'catchup', message: msg })}\n\n`)
       }
 
-      const tailState = { offset, messageCount: messages.length }
+      // messageCount tracks how many non-meta messages we've delivered total
+      let messageCount = initial.filter(m => !m.isMeta).length
+      let lastMtime    = 0
+      try { lastMtime = fs.statSync(filepath).mtimeMs } catch { /* ignore */ }
       let lastHeartbeat = Date.now()
       let aborted = false
 
-      req.signal.addEventListener('abort', () => {
-        aborted = true
-      })
+      req.signal.addEventListener('abort', () => { aborted = true })
 
       async function poll() {
         while (!aborted) {
@@ -55,45 +58,37 @@ export async function GET(req: NextRequest) {
           // Heartbeat
           const now = Date.now()
           if (now - lastHeartbeat >= HEARTBEAT_INTERVAL) {
-            try {
-              controller.enqueue(encoder.encode(': heartbeat\n\n'))
-              lastHeartbeat = now
-            } catch {
-              break
-            }
+            if (!send(': heartbeat\n\n')) break
+            lastHeartbeat = now
           }
 
-          // Read new bytes
-          const { lines, newOffset } = readNewLines(filepath, tailState)
-          if (newOffset !== tailState.offset) {
-            tailState.offset = newOffset
-            for (const line of lines) {
-              if (!line.trim()) continue
-              try {
-                const obj = JSON.parse(line)
-                if (obj.type !== 'user' && obj.type !== 'assistant') continue
-                if (!obj.message || !obj.uuid) continue
-                // Re-parse through our parser for consistency
-                const allMessages = parseJsonlFile(filepath)
-                const newMessages = allMessages.filter(m => !m.isMeta).slice(tailState.messageCount)
-                if (newMessages.length > 0) {
-                  tailState.messageCount += newMessages.length
-                  for (const msg of newMessages) {
-                    const data = JSON.stringify({ type: 'message', message: msg })
-                    try {
-                      controller.enqueue(encoder.encode(`data: ${data}\n\n`))
-                    } catch {
-                      aborted = true
-                      break
-                    }
-                  }
-                }
-                break // only need to trigger once per poll
-              } catch {
-                continue
+          // Check if file changed
+          let newMtime = 0
+          let newSize  = 0
+          try {
+            const stat = fs.statSync(filepath)
+            newMtime = stat.mtimeMs
+            newSize  = stat.size
+          } catch { continue }
+
+          if (newMtime === lastMtime && newSize === offset) continue
+
+          // File changed — re-parse and send only new messages
+          // Re-parse always uses the freshest file (cache is mtime-keyed, so it re-parses on change)
+          const all = parseJsonlFile(filepath).filter(m => !m.isMeta)
+          const newMsgs = all.slice(messageCount)
+
+          if (newMsgs.length > 0) {
+            for (const msg of newMsgs) {
+              if (!send(`data: ${JSON.stringify({ type: 'message', message: msg })}\n\n`)) {
+                aborted = true; break
               }
             }
+            messageCount = all.length
           }
+
+          lastMtime = newMtime
+          offset    = newSize
         }
         try { controller.close() } catch { /* already closed */ }
       }
