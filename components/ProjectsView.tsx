@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { ProjectInfo } from '@/lib/types'
+import LiveTailDrawer from './LiveTailDrawer'
 
 interface Props {
   initialProjects: ProjectInfo[]
@@ -20,6 +21,7 @@ export default function ProjectsView({ initialProjects }: Props) {
   const [projects, setProjects] = useState(initialProjects)
   const [showAdd, setShowAdd] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
+  const [tailing, setTailing] = useState<ProjectInfo | null>(null)
 
   const activeCount = projects.filter(p => p.hasActive).length
 
@@ -92,24 +94,33 @@ export default function ProjectsView({ initialProjects }: Props) {
               onStartRename={() => setRenaming(p.decodedPath)}
               onCancelRename={() => setRenaming(null)}
               onRename={name => handleRename(p.decodedPath, name)}
+              onTail={() => setTailing(p)}
             />
           ))}
         </div>
       )}
 
       {showAdd && <AddProjectModal onClose={() => setShowAdd(false)} onCreate={handleCreate} />}
+      {tailing && (
+        <LiveTailDrawer
+          projectDirName={tailing.dirName}
+          projectDisplayName={tailing.displayName}
+          onClose={() => setTailing(null)}
+        />
+      )}
     </>
   )
 }
 
 function ProjectCard({
-  project, renaming, onStartRename, onCancelRename, onRename,
+  project, renaming, onStartRename, onCancelRename, onRename, onTail,
 }: {
   project: ProjectInfo
   renaming: boolean
   onStartRename: () => void
   onCancelRename: () => void
   onRename: (name: string) => void
+  onTail: () => void
 }) {
   const [draft, setDraft] = useState(project.displayName)
   const href = `/project?p=${b64url(project.dirName)}`
@@ -153,20 +164,34 @@ function ProjectCard({
           : undefined,
       }}
     >
-      <button
-        onClick={e => { e.preventDefault(); e.stopPropagation(); onStartRename() }}
-        title="Rename"
-        aria-label="Rename project"
-        style={{
-          position: 'absolute', top: 10, right: 10,
-          background: 'transparent', border: 'none', cursor: 'pointer',
-          color: 'var(--text3)', fontSize: 13, padding: 4, borderRadius: 6,
-        }}
-      >
-        ✎
-      </button>
+      <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 2 }}>
+        {project.hasActive && (
+          <button
+            onClick={e => { e.preventDefault(); e.stopPropagation(); onTail() }}
+            title="Tail live output"
+            aria-label="Tail live output"
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: 'var(--green)', fontSize: 13, padding: 4, borderRadius: 6,
+            }}
+          >
+            👁
+          </button>
+        )}
+        <button
+          onClick={e => { e.preventDefault(); e.stopPropagation(); onStartRename() }}
+          title="Rename"
+          aria-label="Rename project"
+          style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            color: 'var(--text3)', fontSize: 13, padding: 4, borderRadius: 6,
+          }}
+        >
+          ✎
+        </button>
+      </div>
       <Link href={href} style={{ textDecoration: 'none', display: 'block' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, paddingRight: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, paddingRight: 48 }}>
           {project.hasActive && <span className="dot-active" />}
           <span style={{
             fontWeight: 600, fontSize: 15, color: 'var(--text)',
