@@ -412,6 +412,15 @@ export default function LiveSession({
 
         {/* Status + controls — pushed right */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className="chip"
+            onClick={() => window.location.reload()}
+            title="Refresh session"
+            aria-label="Refresh session"
+            style={{ cursor: 'pointer', padding: '3px 10px' }}
+          >
+            ⟳<span className="hide-mobile" style={{ marginLeft: 4 }}>Refresh</span>
+          </button>
           <span className="chip hide-mobile">{total} msgs</span>
           {isRunning && isThinking && <span className="chip chip-green"><span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span><span className="hide-mobile"> Thinking…</span></span>}
           {isRunning && !isThinking && <span className="chip chip-green">Running</span>}
