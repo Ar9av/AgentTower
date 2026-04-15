@@ -729,21 +729,23 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
           <span style={{ color: 'var(--text2)' }}>—</span>
           <span style={{ color: 'var(--text2)', fontSize: 12 }}>{wasInterrupted ? 'Resume or start fresh' : 'Continue or start a new session'}</span>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <form onSubmit={onSendInput} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 8 }}>
           <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
           <input className="glass-input" value={inputText} onChange={e => setInputText(e.target.value)}
             onPaste={handlePaste}
             placeholder="Continue or restart with a new prompt…"
-            style={{ flex: '1 1 160px', fontSize: 15, padding: '10px 16px', borderRadius: 12 }} />
-          <button className="glass-btn-prominent" onClick={onSendInput as unknown as React.MouseEventHandler}
-            disabled={!canSend || sending} style={{ width: 'auto', padding: '10px 18px', fontSize: 14, flexShrink: 0, minHeight: 44 }}>
-            {sending ? '…' : 'Continue ↩'}
-          </button>
-          <button className="glass-btn" onClick={onKillAndRestart as unknown as React.MouseEventHandler}
-            disabled={!inputText.trim() || sending} style={{ width: 'auto', padding: '10px 18px', fontSize: 14, flexShrink: 0, minHeight: 44 }}>
-            New ↗
-          </button>
-        </div>
+            style={{ fontSize: 15, padding: '10px 16px', borderRadius: 12, minWidth: 0 }} />
+          <div style={{ display: 'flex', gap: 8, gridColumn: '1 / -1' }}>
+            <button type="submit" className="glass-btn-prominent"
+              disabled={!canSend || sending} style={{ flex: 1, padding: '10px 18px', fontSize: 14, minHeight: 44 }}>
+              {sending ? '…' : 'Continue ↩'}
+            </button>
+            <button type="button" className="glass-btn" onClick={onKillAndRestart as unknown as React.MouseEventHandler}
+              disabled={!inputText.trim() || sending} style={{ flex: 1, padding: '10px 18px', fontSize: 14, minHeight: 44 }}>
+              New ↗
+            </button>
+          </div>
+        </form>
         <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--text3)' }}>
           <strong style={{ color: 'var(--text2)' }}>Continue ↩</strong> resumes this thread &nbsp;·&nbsp;
           <strong style={{ color: 'var(--text2)' }}>New ↗</strong> starts fresh in same project
