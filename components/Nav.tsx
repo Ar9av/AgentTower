@@ -74,10 +74,7 @@ export default function Nav() {
           <span
             className="hide-mobile"
             style={{
-              color: theme === 'light' ? 'var(--text)' : 'transparent',
-              background: theme === 'dark' ? 'linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%)' : undefined,
-              WebkitBackgroundClip: theme === 'dark' ? 'text' : undefined,
-              WebkitTextFillColor: theme === 'dark' ? 'transparent' : undefined,
+              color: 'var(--text)',
               fontWeight: 800,
               letterSpacing: '-0.02em',
             }}
