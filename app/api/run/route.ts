@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
-import { spawn } from 'child_process'
+import { spawnClaude } from "@/lib/spawn-claude"
 import path from 'path'
 import fs from 'fs'
 
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid project path' }, { status: 400 })
   }
 
-  const proc = spawn('claude', ['--dangerously-skip-permissions', '-p', prompt], {
+  const proc = spawnClaude(['--dangerously-skip-permissions', '-p', prompt], {
     cwd: project_path,
     detached: true,
     stdio: 'ignore',

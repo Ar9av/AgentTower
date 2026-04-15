@@ -578,15 +578,35 @@ export function readNewLines(filepath: string, state: TailState): { lines: strin
 }
 
 /** Find the project working directory for a given Claude session ID. */
+/** Read the first cwd field from a session JSONL (Claude records real project path here). */
+function readSessionCwd(sessionFile: string): string | null {
+  try {
+    const content = fs.readFileSync(sessionFile, "utf-8")
+    for (const line of content.split("\n")) {
+      if (!line.trim()) continue
+      try {
+        const obj = JSON.parse(line)
+        if (obj && typeof obj.cwd === "string" && obj.cwd.length > 0) return obj.cwd
+      } catch {}
+    }
+  } catch {}
+  return null
+}
+
 export function findSessionProjectCwd(sessionId: string): string | null {
   const projectsDir = path.join(process.env.CLAUDE_DIR || path.join(os.homedir(), ".claude"), "projects")
   let dirs: string[]
   try { dirs = fs.readdirSync(projectsDir) } catch { return null }
   for (const d of dirs) {
     const sessionFile = path.join(projectsDir, d, `${sessionId}.jsonl`)
-    if (fs.existsSync(sessionFile)) {
-      return decodeProjectPath(d)
-    }
+    if (!fs.existsSync(sessionFile)) continue
+    // Prefer the cwd recorded inside the session (handles hyphens in project names)
+    const recorded = readSessionCwd(sessionFile)
+    if (recorded && fs.existsSync(recorded)) return recorded
+    // Fallback: decoded directory name (best-effort, ambiguous for hyphenated names)
+    const decoded = decodeProjectPath(d)
+    if (fs.existsSync(decoded)) return decoded
+    return recorded || decoded
   }
   return null
 }
