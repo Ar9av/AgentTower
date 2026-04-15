@@ -14,6 +14,7 @@ import {
   ClaudeProcess,
 } from './types'
 import { scanClaudeSessions, getProcessState } from './process'
+import { loadProjectMeta, getWorkspaceRoot } from './project-meta'
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,11 @@ export function decodeProjectPath(dirName: string): string {
   // Claude encodes '/' as '-' and '.' as '--'
   // We need to handle '--' before '-' to avoid double-replacing
   return dirName.replace(/--/g, '\x00').replace(/-/g, '/').replace(/\x00/g, '.')
+}
+
+export function encodeProjectPath(projectPath: string): string {
+  // Inverse of decodeProjectPath. '.' → '--', '/' → '-'.
+  return projectPath.replace(/\./g, '--').replace(/\//g, '-')
 }
 
 export function encodeB64(s: string): string {
@@ -348,15 +354,16 @@ export function discoverProjects(): ProjectInfo[] {
   const runningCwds = new Set(Object.values(running).map(p => p.cwd))
   const activeThreshold = getActiveThreshold()
   const now = Date.now()
+  const meta = loadProjectMeta().projects
 
   let entries: fs.Dirent[]
   try {
     entries = fs.readdirSync(projectsDir, { withFileTypes: true })
   } catch {
-    return []
+    entries = []
   }
 
-  const projects: ProjectInfo[] = []
+  const byPath = new Map<string, ProjectInfo>()
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
@@ -379,9 +386,9 @@ export function discoverProjects(): ProjectInfo[] {
       runningCwds.has(decodedPath) ||
       (now - latestMtime < activeThreshold * 1000)
 
-    const displayName = path.basename(decodedPath) || decodedPath
+    const displayName = meta[decodedPath]?.displayName || path.basename(decodedPath) || decodedPath
 
-    projects.push({
+    byPath.set(decodedPath, {
       dirName: entry.name,
       decodedPath,
       displayName,
@@ -391,6 +398,44 @@ export function discoverProjects(): ProjectInfo[] {
     })
   }
 
+  // Add workspace-only projects (created via UI but no Claude sessions yet)
+  const workspaceRoot = getWorkspaceRoot()
+  try {
+    const wsEntries = fs.readdirSync(workspaceRoot, { withFileTypes: true })
+    for (const e of wsEntries) {
+      if (!e.isDirectory()) continue
+      const p = path.join(workspaceRoot, e.name)
+      if (byPath.has(p)) continue
+      let mtime = 0
+      try { mtime = fs.statSync(p).mtimeMs } catch {}
+      const dirName = encodeProjectPath(p)
+      byPath.set(p, {
+        dirName,
+        decodedPath: p,
+        displayName: meta[p]?.displayName || e.name,
+        sessionCount: 0,
+        latestMtime: mtime,
+        hasActive: runningCwds.has(p),
+      })
+    }
+  } catch {}
+
+  // Also pick up any metadata-only entries (edge case: path deleted but meta remains)
+  for (const [p, m] of Object.entries(meta)) {
+    if (byPath.has(p)) continue
+    if (!fs.existsSync(p)) continue
+    const dirName = p.replace(/\./g, '-').replace(/\//g, '-')
+    byPath.set(p, {
+      dirName,
+      decodedPath: p,
+      displayName: m.displayName || path.basename(p),
+      sessionCount: 0,
+      latestMtime: 0,
+      hasActive: runningCwds.has(p),
+    })
+  }
+
+  const projects = Array.from(byPath.values())
   projects.sort((a, b) => {
     if (a.hasActive !== b.hasActive) return a.hasActive ? -1 : 1
     return b.latestMtime - a.latestMtime

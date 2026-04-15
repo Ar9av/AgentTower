@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getSessionToken, validateSession } from '@/lib/auth'
 import { listSessions, decodeB64, encodeB64, decodeProjectPath } from '@/lib/claude-fs'
+import { getProjectMeta } from '@/lib/project-meta'
 import Nav from '@/components/Nav'
 import ProcessControls from '@/components/ProcessControls'
 import NewSessionForm from '@/components/NewSessionForm'
@@ -23,6 +24,8 @@ export default async function ProjectPage({ searchParams }: Props) {
   const dirName = decodeB64(encoded)
   const sessions = listSessions(dirName)
   const projectPath = decodeProjectPath(dirName)
+  const meta = getProjectMeta(projectPath)
+  const title = meta?.displayName || projectPath.split('/').pop() || projectPath
 
   const active = sessions.filter(s => s.processState === 'running' || s.processState === 'paused')
   const history = sessions.filter(s => s.processState !== 'running' && s.processState !== 'paused')
@@ -39,7 +42,7 @@ export default async function ProjectPage({ searchParams }: Props) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 10 }}>
             <div>
               <h1 style={{ margin: '0 0 3px', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>
-                {projectPath.split('/').pop()}
+                {title}
               </h1>
               <p style={{ margin: 0, color: 'var(--text3)', fontSize: 12, fontFamily: 'ui-monospace, monospace' }}>
                 {projectPath}
