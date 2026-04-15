@@ -20,10 +20,18 @@ Message [@userinfobot](https://t.me/userinfobot) — it replies with your numeri
 
 ### 3. Configure
 
+Two ways:
+
+**Option A — web UI (recommended):** log into AgentTower and go to `/integrations`. Paste your chat id, default project dir, and optional OpenAI key. Saved to `~/.claude/agenttower-integrations.json` — the running bot re-reads it every 5 seconds, no restart needed.
+
+**Option B — env file:**
+
 ```bash
 cp telegram/.env.example telegram/.env
-# Edit telegram/.env — set BOT_TOKEN and ALLOWED_CHAT_ID
+# Edit telegram/.env — set BOT_TOKEN and ALLOWED_CHAT_IDS
 ```
+
+Env vars always win over the UI config.
 
 ### 4. Run
 

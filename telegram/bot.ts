@@ -19,31 +19,26 @@ import {
   findSessionProjectCwd,
 } from '../lib/claude-fs'
 import { scanClaudeSessions, getProcessState } from '../lib/process'
+import { resolveTelegramRuntimeConfig } from '../lib/integrations'
 
 const execFileP = promisify(execFile)
 
 // ── Config ─────────────────────────────────────────────────────────────────
 
 const BOT_TOKEN     = process.env.BOT_TOKEN ?? ''
-const OPENAI_KEY    = process.env.OPENAI_API_KEY ?? ''
 const POLL_INTERVAL = 1_000   // ms between JSONL polls when streaming
 const EDIT_THROTTLE = 1_500   // ms between Telegram message edits
 const MAX_MSG_LEN   = 3800    // safe under Telegram 4096
-const MAX_CAPTION   = 1000
-const RATE_LIMIT    = { max: 20, windowMs: 60_000 }  // 20 cmds / min / user
+const RATE_LIMIT    = { max: 60, windowMs: 60_000 }  // 60 cmds / min / user
 const STATE_PATH    = path.join(os.homedir(), '.claude', 'agenttower-bot.json')
 const AUDIT_PATH    = path.join(os.homedir(), '.claude', 'agenttower-audit.jsonl')
 const UPLOAD_DIR    = path.join(os.tmpdir(), 'agenttower-uploads')
+const CONFIG_RELOAD_MS = 5_000
 
-// ALLOWED_CHAT_IDS (comma-separated) or legacy ALLOWED_CHAT_ID
-const ALLOWED_IDS = new Set<number>(
-  (process.env.ALLOWED_CHAT_IDS ?? process.env.ALLOWED_CHAT_ID ?? '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(Number)
-    .filter(n => !Number.isNaN(n))
-)
+// Runtime config (allowed ids, openai key, projects dir) reloaded every
+// CONFIG_RELOAD_MS from ~/.claude/agenttower-integrations.json + env.
+let runtime = resolveTelegramRuntimeConfig()
+setInterval(() => { runtime = resolveTelegramRuntimeConfig() }, CONFIG_RELOAD_MS)
 
 if (!BOT_TOKEN) {
   console.error('BOT_TOKEN is required')
@@ -69,7 +64,7 @@ const state = loadState()
 
 function userCwd(chatId: number): string {
   return state.userDefaults[String(chatId)]?.cwd
-    ?? process.env.PROJECTS_DIR
+    ?? runtime.projectsDir
     ?? os.homedir()
 }
 function setUserCwd(chatId: number, cwd: string) {
@@ -211,8 +206,8 @@ function chunkText(s: string, size: number): string[] {
 // ── Auth guard ─────────────────────────────────────────────────────────────
 
 function allowed(chatId: number): boolean {
-  if (ALLOWED_IDS.size === 0) return true
-  return ALLOWED_IDS.has(chatId)
+  if (runtime.allowedChatIds.size === 0) return true
+  return runtime.allowedChatIds.has(chatId)
 }
 
 // ── Inline keyboard builders ───────────────────────────────────────────────
@@ -411,7 +406,7 @@ async function pollStream(s: StreamState) {
 const seenRunning = new Map<string, { chatId: number; cwd: string }>()
 
 function notifyChats(text: string, extra: Record<string, unknown> = {}) {
-  const ids = ALLOWED_IDS.size > 0 ? [...ALLOWED_IDS] : []
+  const ids = runtime.allowedChatIds.size > 0 ? [...runtime.allowedChatIds] : []
   for (const id of ids) sendMsg(id, text, extra)
 }
 
@@ -783,14 +778,15 @@ async function handleIncomingFile(
 }
 
 async function transcribeVoice(filepath: string): Promise<string | null> {
-  if (!OPENAI_KEY) return null
+  const key = runtime.openaiApiKey
+  if (!key) return null
   try {
     const form = new FormData()
     form.append('file', new Blob([fs.readFileSync(filepath)]), path.basename(filepath))
     form.append('model', 'whisper-1')
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${OPENAI_KEY}` },
+      headers: { Authorization: `Bearer ${key}` },
       body: form,
     })
     if (!res.ok) return null
@@ -857,9 +853,10 @@ interface TgUpdate {
 async function poll() {
   let offset = 0
   console.log('🗼 AgentTower Telegram Bot started')
-  if (ALLOWED_IDS.size > 0) console.log(`   Authorized: ${[...ALLOWED_IDS].join(', ')}`)
-  else console.log('   ⚠️  No ALLOWED_CHAT_IDS set — open to all')
-  if (OPENAI_KEY) console.log('   Voice transcription: enabled')
+  if (runtime.allowedChatIds.size > 0) console.log(`   Authorized: ${[...runtime.allowedChatIds].join(', ')}`)
+  else console.log('   ⚠️  No allowed chat ids set — open to all')
+  if (runtime.openaiApiKey) console.log('   Voice transcription: enabled')
+  console.log(`   Config: ~/.claude/agenttower-integrations.json (live-reloads every ${CONFIG_RELOAD_MS / 1000}s)`)
 
   while (true) {
     try {
