@@ -48,6 +48,7 @@ export default function LiveSession({
   const [sending, setSending]               = useState(false)
   const [wasInterrupted, setWasInterrupted] = useState(false)
   const [attachedImage, setAttachedImage]   = useState<AttachedImage | null>(null)
+  const [copiedId, setCopiedId]             = useState(false)
   // Optimistic "waiting for Claude" — set true immediately after send, cleared when assistant replies
   const [waitingForReply, setWaitingForReply] = useState(false)
 
@@ -393,12 +394,27 @@ export default function LiveSession({
           ← Back
         </button>
 
-        {/* Session ID — hide on very small screens */}
-        <span className="hide-mobile" style={{
-          fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--text3)',
-          background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
-          borderRadius: 6, padding: '2px 8px',
-        }}>{sessionId.slice(0, 16)}…</span>
+        {/* Session ID — click to copy */}
+        <button
+          className="hide-mobile"
+          onClick={() => {
+            navigator.clipboard?.writeText(sessionId).then(() => {
+              setCopiedId(true)
+              setTimeout(() => setCopiedId(false), 1200)
+            })
+          }}
+          title={copiedId ? 'Copied!' : `Copy session ID: ${sessionId}`}
+          style={{
+            fontFamily: 'ui-monospace, monospace', fontSize: 11,
+            color: copiedId ? 'var(--green)' : 'var(--text3)',
+            background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
+            borderRadius: 6, padding: '2px 8px', cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+          }}
+        >
+          <span>{copiedId ? 'Copied' : `${sessionId.slice(0, 16)}…`}</span>
+          <span style={{ fontSize: 10, opacity: 0.7 }}>{copiedId ? '✓' : '⎘'}</span>
+        </button>
 
         {/* Live dot */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -730,35 +746,26 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
   return (
     <div className="glass-lg" style={{ padding: pad, ...base }}>
       <div style={{ maxWidth: 840, margin: '0 auto' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10, padding: '8px 14px',
-          background: `color-mix(in srgb, ${wasInterrupted ? 'var(--red)' : 'var(--green)'} 8%, transparent)`,
-          border: `1px solid color-mix(in srgb, ${wasInterrupted ? 'var(--red)' : 'var(--green)'} 25%, transparent)`,
-          borderRadius: 10, fontSize: 13, color: wasInterrupted ? 'var(--red)' : 'var(--green)' }}>
-          <span>{wasInterrupted ? '⚡ Interrupted' : '✓ Complete'}</span>
-          <span style={{ color: 'var(--text2)' }}>—</span>
-          <span style={{ color: 'var(--text2)', fontSize: 12 }}>{wasInterrupted ? 'Resume or start fresh' : 'Continue or start a new session'}</span>
-        </div>
-        <form onSubmit={onSendInput} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 8 }}>
+        <form onSubmit={onSendInput} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
           <input className="glass-input" value={inputText} onChange={e => setInputText(e.target.value)}
             onPaste={handlePaste}
-            placeholder="Continue or restart with a new prompt…"
-            style={{ fontSize: 15, padding: '10px 16px', borderRadius: 12, minWidth: 0 }} />
-          <div style={{ display: 'flex', gap: 8, gridColumn: '1 / -1' }}>
-            <button type="submit" className="glass-btn-prominent"
-              disabled={!canSend || sending} style={{ flex: 1, padding: '10px 18px', fontSize: 14, minHeight: 44 }}>
-              {sending ? '…' : 'Continue ↩'}
-            </button>
-            <button type="button" className="glass-btn" onClick={onKillAndRestart as unknown as React.MouseEventHandler}
-              disabled={!inputText.trim() || sending} style={{ flex: 1, padding: '10px 18px', fontSize: 14, minHeight: 44 }}>
-              New ↗
-            </button>
-          </div>
+            placeholder={wasInterrupted ? 'Resume or start fresh…' : 'Continue thread or start new…'}
+            style={{ flex: '1 1 200px', fontSize: 14, padding: '8px 12px', borderRadius: 10, minWidth: 0, minHeight: 36 }} />
+          <button type="submit" className="glass-btn-prominent"
+            disabled={!canSend || sending}
+            title="Resume this session"
+            style={{ padding: '8px 14px', fontSize: 13, minHeight: 36 }}>
+            {sending ? '…' : 'Continue ↩'}
+          </button>
+          <button type="button" className="glass-btn"
+            onClick={onKillAndRestart as unknown as React.MouseEventHandler}
+            disabled={!inputText.trim() || sending}
+            title="Start a new session in the same project"
+            style={{ padding: '8px 14px', fontSize: 13, minHeight: 36 }}>
+            New ↗
+          </button>
         </form>
-        <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--text3)' }}>
-          <strong style={{ color: 'var(--text2)' }}>Continue ↩</strong> resumes this thread &nbsp;·&nbsp;
-          <strong style={{ color: 'var(--text2)' }}>New ↗</strong> starts fresh in same project
-        </p>
       </div>
     </div>
   )
