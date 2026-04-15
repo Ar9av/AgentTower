@@ -7,7 +7,6 @@ import Sidebar from '@/components/Sidebar'
 export const metadata: Metadata = {
   title: 'AgentTower',
   description: 'Monitor, tail, and control Claude Code sessions',
-  icons: { icon: '/icon.png', shortcut: '/icon.png', apple: '/icon.png' },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
