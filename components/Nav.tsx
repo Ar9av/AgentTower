@@ -103,6 +103,16 @@ export default function Nav() {
             ⌕
           </button>
 
+          {/* Integrations */}
+          <Link
+            href="/integrations"
+            className="glass-btn hide-mobile"
+            style={{ padding: '6px 12px', minHeight: 36, fontSize: 13, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+            title="Integrations"
+          >
+            Integrations
+          </Link>
+
           {/* Theme toggle */}
           <button
             onClick={toggle}
