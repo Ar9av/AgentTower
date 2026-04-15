@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getSessionToken, validateSession } from '@/lib/auth'
-import { listSessions, decodeB64, encodeB64, decodeProjectPath } from '@/lib/claude-fs'
+import { listSessions, decodeB64, encodeB64, resolveProjectPath } from '@/lib/claude-fs'
 import { getProjectMeta } from '@/lib/project-meta'
 import Nav from '@/components/Nav'
 import ProcessControls from '@/components/ProcessControls'
@@ -23,7 +23,7 @@ export default async function ProjectPage({ searchParams }: Props) {
 
   const dirName = decodeB64(encoded)
   const sessions = listSessions(dirName)
-  const projectPath = decodeProjectPath(dirName)
+  const projectPath = resolveProjectPath(dirName)
   const meta = getProjectMeta(projectPath)
   const title = meta?.displayName || projectPath.split('/').pop() || projectPath
 

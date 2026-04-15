@@ -380,7 +380,12 @@ export function discoverProjects(): ProjectInfo[] {
       try { return fs.statSync(path.join(dirPath, f)).mtimeMs } catch { return 0 }
     })
     const latestMtime = Math.max(...mtimes)
-    const decodedPath = decodeProjectPath(entry.name)
+    // Prefer real cwd from a session JSONL (handles hyphenated folder names)
+    let decodedPath = decodeProjectPath(entry.name)
+    for (const f of jsonlFiles) {
+      const recorded = readSessionCwd(path.join(dirPath, f))
+      if (recorded) { decodedPath = recorded; break }
+    }
 
     const hasActive =
       runningCwds.has(decodedPath) ||
@@ -636,6 +641,27 @@ function readSessionCwd(sessionFile: string): string | null {
     }
   } catch {}
   return null
+}
+
+/** Resolve a Claude project dirName to its real project path. */
+export function resolveProjectPath(dirName: string): string {
+  const projectsDir = getProjectsDir()
+  const dirPath = path.join(projectsDir, dirName)
+  // Prefer cwd from any session JSONL — handles hyphens in folder names.
+  try {
+    const jsonls = fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl'))
+    for (const f of jsonls) {
+      const recorded = readSessionCwd(path.join(dirPath, f))
+      if (recorded && fs.existsSync(recorded)) return recorded
+    }
+  } catch {}
+  // Check project-meta for a recorded path (UI-created projects have an entry keyed by their real path).
+  const meta = loadProjectMeta().projects
+  for (const p of Object.keys(meta)) {
+    if (encodeProjectPath(p) === dirName && fs.existsSync(p)) return p
+  }
+  // Fall back to decoded path (ambiguous for hyphenated names, but best effort).
+  return decodeProjectPath(dirName)
 }
 
 export function findSessionProjectCwd(sessionId: string): string | null {
