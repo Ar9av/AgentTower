@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useTheme } from './ThemeProvider'
 import { useSidebar } from './SidebarProvider'
+import Notifications from './Notifications'
 
 export default function Nav() {
   const router = useRouter()
@@ -102,6 +103,8 @@ export default function Nav() {
           >
             ⌕
           </button>
+
+          <Notifications />
 
           {/* Integrations */}
           <Link
