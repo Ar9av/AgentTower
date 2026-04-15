@@ -42,21 +42,33 @@ BOT_TOKEN=xxx ALLOWED_CHAT_ID=yyy npx ts-node telegram/bot.ts
 
 | Command | Description |
 |---|---|
-| `/start` | Show help |
-| `/sessions` | List recent Claude sessions with status |
-| `/status` | Show currently running Claude processes |
-| `/task <prompt>` | Start a new Claude session, stream output |
-| `/task /path/to/project\n<prompt>` | Start session in a specific project directory |
-| `/watch <session-id>` | Stream output from an existing session |
-| `/kill <session-id>` | Send SIGTERM to a running session |
-| `/pause <session-id>` | Send SIGSTOP (freeze) |
-| `/resume <session-id>` | Send SIGCONT (unfreeze) and resume streaming |
+| `/start`, `/help` | Show help |
+| `/sessions` | List recent sessions with inline buttons (Kill/Pause/Resume/Watch/Logs/Diff) |
+| `/status` | Show running Claude processes with controls |
+| `/task <prompt>` | Start a new session with `--dangerously-skip-permissions` |
+| `/safetask <prompt>` | Start a session with default permissions (prompts on tool use) |
+| `/plan <prompt>` | Start in plan mode (read-only investigation) |
+| `/task /abs/path\n<prompt>` | Override project dir for this task |
+| `/watch <id>` | Stream output from an existing session |
+| `/kill <id>` | SIGTERM a running session |
+| `/pause <id>` | SIGSTOP (freeze) |
+| `/resume <id>` | SIGCONT (unfreeze) and resume streaming |
+| `/logs <id> [n]` | Last n messages from a session (default 5, max 20) |
+| `/diff <id>` | `git diff HEAD` in the session's cwd; full patch attached as a file |
+| `/cd <path>` | Set your default project dir (persisted per chat) |
+| `/pwd` | Show your current default |
+| `/whoami` | Show your chat id |
 
 Session IDs can be the first 8 characters of the full UUID.
+Every session message has inline buttons — you rarely need to type IDs by hand.
 
-## Sending messages
+## Sending messages & files
 
-Any plain text message (not a command) is injected into the most recently active Claude session via `claude --resume`. If no session is running, it starts a new one.
+- **Plain text** → injected into the most recently running session (or starts a new one).
+- **Reply to a bot message** → same as plain text.
+- **Upload a file/photo** → stashed as an attachment; your next text message will be prefixed with a reference to the file path so Claude can `Read` it.
+  - Send a caption with the file to use it immediately in one step.
+- **Voice message** → transcribed via OpenAI Whisper (if `OPENAI_API_KEY` is set) and injected as a prompt.
 
 ## How streaming works
 
@@ -80,11 +92,26 @@ Bot: ✅ Session complete
 - Errors are shown with `✗`
 - Thinking blocks shown as italicised preview
 
-## Security
+## Security & ops
 
-- Set `ALLOWED_CHAT_ID` — the bot rejects all other chat IDs
-- Without it, anyone who finds your bot can control your Claude sessions
-- For teams: run behind a private Telegram group and validate group chat ID
+- `ALLOWED_CHAT_IDS=111,222,333` — comma-separated allowlist. `ALLOWED_CHAT_ID` (singular) still works for backward compatibility.
+- Without an allowlist set, the bot accepts anyone who messages it (dev only).
+- **Rate limiting:** 20 commands/min per chat, buttons included.
+- **Audit log:** every message, button press, and denied request is appended to `~/.claude/agenttower-audit.jsonl`.
+- **Notifications:** when a session finishes while you're not watching, the bot pings all allowed chats.
+- **Safer mode:** prefer `/safetask` or `/plan` over `/task` for any prompt involving destructive tools — `/task` uses `--dangerously-skip-permissions`.
+
+## Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `BOT_TOKEN` | Required. From @BotFather. |
+| `ALLOWED_CHAT_IDS` | Comma-separated numeric chat IDs. |
+| `OPENAI_API_KEY` | Optional. Enables voice message transcription via Whisper. |
+| `PROJECTS_DIR` | Default cwd for new sessions (overridden per-user by `/cd`). |
+| `CLAUDE_DIR` | Override `~/.claude`. |
+
+State is persisted to `~/.claude/agenttower-bot.json` (user defaults) and `~/.claude/agenttower-audit.jsonl` (audit log).
 
 ## Running as a service
 
