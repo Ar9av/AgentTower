@@ -136,7 +136,7 @@ async function sendMsg(
     last = await tg<TgMessage>('sendMessage', {
       chat_id: chatId,
       text: chunks[i],
-      parse_mode: 'MarkdownV2',
+      parse_mode: 'HTML',
       ...(isLast ? extra : {}),
     })
   }
@@ -148,7 +148,7 @@ async function editMsg(chatId: number, msgId: number, text: string, extra: Recor
     chat_id: chatId,
     message_id: msgId,
     text: text.slice(0, MAX_MSG_LEN),
-    parse_mode: 'MarkdownV2',
+    parse_mode: 'HTML',
     ...extra,
   })
 }
@@ -178,9 +178,25 @@ async function downloadFile(fileId: string, destDir: string, filename?: string):
   }
 }
 
-// Escape MarkdownV2 special chars
-function md(s: string): string {
-  return s.replace(/[_*[\]()~`>#+=|{}.!\\-]/g, '\\$&')
+// Escape HTML special chars (for plain text in HTML parse mode)
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// Convert Claude markdown to Telegram HTML
+function claudeHtml(text: string): string {
+  // Escape HTML first, then convert markdown constructs
+  let s = esc(text)
+  // Fenced code blocks: ```lang\ncode\n``` → <pre>code</pre>
+  s = s.replace(/```[^\n]*\n([\s\S]*?)```/g, (_m, code) => `<pre>${code}</pre>`)
+  // Inline code: `code` → <code>code</code>
+  s = s.replace(/`([^`]+)`/g, (_m, code) => `<code>${code}</code>`)
+  // Bold: **text** → <b>text</b>
+  s = s.replace(/\*\*([^*]+)\*\*/g, (_m, inner) => `<b>${inner}</b>`)
+  // Italic: *text* or _text_ → <i>text</i>
+  s = s.replace(/\*([^*]+)\*/g, (_m, inner) => `<i>${inner}</i>`)
+  s = s.replace(/_([^_]+)_/g, (_m, inner) => `<i>${inner}</i>`)
+  return s
 }
 
 function truncate(s: string, n = 300): string {
@@ -291,7 +307,7 @@ async function startStreaming(
   if (activeStreams.has(sessionId)) return
 
   const initial = parseJsonlFile(filepath).filter(m => !m.isMeta)
-  const placeholder = await sendMsg(chatId, md('⏳ Waiting for Claude...'))
+  const placeholder = await sendMsg(chatId, '⏳ Waiting for Claude...')
   if (!placeholder) return
 
   const s: StreamState = {
@@ -308,9 +324,12 @@ async function startStreaming(
   pollStream(s)
 }
 
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000  // 5 minutes of no new messages
+
 async function pollStream(s: StreamState) {
-  const MAX_POLLS = 1800 // 30 min
+  const MAX_POLLS = 3600 // 60 min absolute ceiling
   let polls = 0
+  let lastActivityAt = Date.now()
 
   while (!s.done && polls < MAX_POLLS) {
     await new Promise(r => setTimeout(r, POLL_INTERVAL))
@@ -319,10 +338,15 @@ async function pollStream(s: StreamState) {
     const all = parseJsonlFile(s.filepath).filter(m => !m.isMeta)
     const newMsgs = all.slice(s.messageCount)
     if (newMsgs.length === 0) {
+      const idleMs = Date.now() - lastActivityAt
       const running = scanClaudeSessions(getClaudeDir())
-      if (!running[s.sessionId] && polls > 5) { s.done = true; break }
+      const dead = !running[s.sessionId]
+      // Only end after 5 min of no new messages AND process is gone
+      if (dead && idleMs >= IDLE_TIMEOUT_MS) { s.done = true; break }
       continue
     }
+
+    lastActivityAt = Date.now()
 
     for (const msg of newMsgs) {
       s.messageCount++
@@ -330,20 +354,16 @@ async function pollStream(s: StreamState) {
       if (msg.type === 'assistant') {
         const parts: string[] = []
         for (const block of msg.content) {
-          if (block.type === 'text' && block.text) parts.push(md(block.text))
+          if (block.type === 'text' && block.text) parts.push(claudeHtml(block.text))
           if (block.type === 'tool_use') {
-            const inputStr = JSON.stringify(block.tool_input ?? {}, null, 2)
-            parts.push(
-              `\n⚙ \`${md(block.tool_name ?? '')}\`\n` +
-              `\`\`\`\n${md(truncate(inputStr, 200))}\n\`\`\``
-            )
+            parts.push(`\n⚙ <code>${esc(block.tool_name ?? '')}</code>`)
           }
           if (block.type === 'tool_result') {
             const resultText = block.tool_result?.map(b => b.text ?? '').join('\n') ?? ''
-            if (block.is_error) parts.push(`\n✗ _${md(truncate(resultText, 100))}_`)
+            if (block.is_error) parts.push(`\n✗ <i>${esc(truncate(resultText, 100))}</i>`)
           }
           if (block.type === 'thinking') {
-            parts.push(`\n💭 _${md(truncate(block.thinking ?? '', 150))}_`)
+            parts.push(`\n💭 <i>${esc(truncate(block.thinking ?? '', 150))}</i>`)
           }
         }
 
@@ -365,10 +385,10 @@ async function pollStream(s: StreamState) {
         s.buffer = text
 
       } else if (msg.type === 'user' && !msg.isMeta) {
-        await sendMsg(s.chatId, `📨 ${md(truncate(
+        await sendMsg(s.chatId, `📨 ${esc(truncate(
           msg.content.find(b => b.type === 'text')?.text ?? '', 100
         ))}`)
-        const next = await sendMsg(s.chatId, md('⏳ Claude is thinking...'))
+        const next = await sendMsg(s.chatId, '⏳ Claude is thinking...')
         if (next) s.msgId = next.message_id
         s.lastEdit = 0
       }
@@ -383,17 +403,16 @@ async function pollStream(s: StreamState) {
   const proc = running[s.sessionId]
   const status = proc ? getProcessState(proc.pid) : 'dead'
 
-  const short = s.sessionId.slice(0, 8)
   if (status === 'dead') {
     await sendMsg(
       s.chatId,
-      `✅ *Session complete* \\(\`${md(short)}\`\\)\n\nReply to continue, or /sessions to see all\\.`,
+      `✅ <b>Session complete</b>\n\nReply to continue, or /sessions to see all.`,
       sessionKeyboard(s.sessionId, false, false),
     )
   } else {
     await sendMsg(
       s.chatId,
-      `⏸ *Session paused* \\(PID ${proc?.pid}\\)`,
+      `⏸ <b>Session paused</b> (PID ${proc?.pid})`,
       sessionKeyboard(s.sessionId, true, true),
     )
   }
@@ -423,7 +442,7 @@ setInterval(() => {
     if (activeStreams.has(id)) continue // already reported via stream
     const short = id.slice(0, 8)
     notifyChats(
-      `🔔 *Session finished* \`${md(short)}\`\n_${md(path.basename(info.cwd))}_`,
+      `🔔 <b>Session finished</b> <code>${esc(short)}</code>\n<i>${esc(path.basename(info.cwd))}</i>`,
       sessionKeyboard(id, false, false),
     )
   }
@@ -433,46 +452,46 @@ setInterval(() => {
 
 async function handleStart(chatId: number) {
   await sendMsg(chatId, [
-    `🗼 *AgentTower Bot*`,
+    `🗼 <b>AgentTower Bot</b>`,
     ``,
-    `Control Claude Code sessions from Telegram\\.`,
+    `Control Claude Code sessions from Telegram.`,
     ``,
-    `*Tasks*`,
-    `/task \\<prompt\\> — start a new session \\(skip permissions\\)`,
-    `/safetask \\<prompt\\> — start with default permissions`,
-    `/plan \\<prompt\\> — start in plan mode \\(read\\-only\\)`,
+    `<b>Tasks</b>`,
+    `/task &lt;prompt&gt; — start a new session (skip permissions)`,
+    `/safetask &lt;prompt&gt; — start with default permissions`,
+    `/plan &lt;prompt&gt; — start in plan mode (read-only)`,
     ``,
-    `*Navigation*`,
-    `/sessions — list recent sessions \\(with buttons\\)`,
+    `<b>Navigation</b>`,
+    `/sessions — list recent sessions (with buttons)`,
     `/status — running sessions`,
-    `/logs \\<id\\> \\[n\\] — last n messages from a session`,
-    `/diff \\<id\\> — git diff in the session's cwd`,
+    `/logs &lt;id&gt; [n] — last n messages from a session`,
+    `/diff &lt;id&gt; — git diff in the session's cwd`,
     ``,
-    `*Control*`,
-    `/kill /pause /resume /watch \\<id\\>`,
+    `<b>Control</b>`,
+    `/kill /pause /resume /watch &lt;id&gt;`,
     ``,
-    `*Settings*`,
-    `/cd \\<path\\> — set default project dir`,
+    `<b>Settings</b>`,
+    `/cd &lt;path&gt; — set default project dir`,
     `/pwd — show your default dir`,
     `/whoami — show your chat id`,
     ``,
-    `*Extras*`,
-    `Upload a file \\(doc / photo / voice\\) — next message uses it as context\\.`,
-    `Voice messages get transcribed if OPENAI\\_API\\_KEY is set\\.`,
+    `<b>Extras</b>`,
+    `Upload a file (doc / photo / voice) — next message uses it as context.`,
+    `Voice messages get transcribed if OPENAI_API_KEY is set.`,
     ``,
-    `Plain text reply injects into the most recent running session\\.`,
+    `Plain text reply injects into the most recent running session.`,
   ].join('\n'))
 }
 
 async function handleSessions(chatId: number) {
   const recent = getRecentSessions(10)
   if (recent.length === 0) {
-    await sendMsg(chatId, md('No sessions found. Use /task to start one.'))
+    await sendMsg(chatId, 'No sessions found. Use /task to start one.')
     return
   }
   const running = scanClaudeSessions(getClaudeDir())
 
-  await sendMsg(chatId, `*Recent Sessions* \\(tap a session for controls\\)`)
+  await sendMsg(chatId, `<b>Recent Sessions</b> (tap a session for controls)`)
 
   for (const s of recent) {
     const proc = running[s.sessionId]
@@ -484,7 +503,7 @@ async function handleSessions(chatId: number) {
 
     await sendMsg(
       chatId,
-      `${icon} \`${md(short)}\` *${md(s.projectDisplayName)}* \\(${md(age)}\\)\n_${md(prompt)}_`,
+      `${icon} <b>${esc(s.projectDisplayName)}</b> (${esc(age)})\n<i>${esc(prompt)}</i>`,
       sessionKeyboard(s.sessionId, pstate === 'running' || pstate === 'paused', pstate === 'paused'),
     )
   }
@@ -494,16 +513,15 @@ async function handleStatus(chatId: number) {
   const running = scanClaudeSessions(getClaudeDir())
   const procs = Object.values(running)
   if (procs.length === 0) {
-    await sendMsg(chatId, md('No active Claude processes.'))
+    await sendMsg(chatId, 'No active Claude processes.')
     return
   }
   for (const p of procs) {
     const pstate = getProcessState(p.pid)
     const icon = pstate === 'running' ? '🟢' : pstate === 'paused' ? '🟡' : '⚫'
-    const short = p.sessionId.slice(0, 8)
     await sendMsg(
       chatId,
-      `${icon} \`${md(short)}\` PID:${p.pid}\n_${md(path.basename(p.cwd))}_`,
+      `${icon} PID:${p.pid}\n<i>${esc(path.basename(p.cwd))}</i>`,
       sessionKeyboard(p.sessionId, true, pstate === 'paused'),
     )
   }
@@ -520,12 +538,12 @@ async function spawnTask(
   try {
     if (!fs.statSync(projectPath).isDirectory()) throw new Error()
   } catch {
-    await sendMsg(chatId, md(`Invalid project path: ${projectPath}`))
+    await sendMsg(chatId, `Invalid project path: ${esc(projectPath)}`)
     return
   }
 
   const modeLabel = mode === 'skip' ? '⚡' : mode === 'plan' ? '📋' : '🔒'
-  await sendMsg(chatId, `${modeLabel} *Starting* in \`${md(path.basename(projectPath))}\`\n_${md(truncate(prompt, 100))}_`)
+  await sendMsg(chatId, `${modeLabel} <b>Starting</b> in <code>${esc(path.basename(projectPath))}</code>\n<i>${esc(truncate(prompt, 100))}</i>`)
   await sendChatAction(chatId)
 
   const args = ['-p', prompt]
@@ -542,7 +560,7 @@ async function spawnTask(
   }) ?? recent[0]
 
   if (!newest) {
-    await sendMsg(chatId, md('Session started but session file not found yet. Try /sessions.'))
+    await sendMsg(chatId, 'Session started but session file not found yet. Try /sessions.')
     return
   }
   await startStreaming(chatId, newest.sessionId, newest.filepath)
@@ -551,7 +569,7 @@ async function spawnTask(
 async function handleTask(chatId: number, rawPrompt: string, mode: TaskMode) {
   const prompt = rawPrompt.trim()
   if (!prompt) {
-    await sendMsg(chatId, md('Usage: /task <prompt>  (optionally starts with /abs/path)'))
+    await sendMsg(chatId, 'Usage: /task &lt;prompt&gt;  (optionally starts with /abs/path)')
     return
   }
 
@@ -578,73 +596,89 @@ async function handleWatch(chatId: number, sessionIdPrefix: string) {
   const recent = getRecentSessions(30)
   const session = recent.find(s => s.sessionId.startsWith(sessionIdPrefix))
   if (!session) {
-    await sendMsg(chatId, md(`No session found matching: ${sessionIdPrefix}`))
+    await sendMsg(chatId, `No session found matching: ${esc(sessionIdPrefix)}`)
     return
   }
-  await sendMsg(chatId, `👁 *Watching* \`${md(session.sessionId.slice(0, 8))}\``)
+  await sendMsg(chatId, `👁 <b>Watching</b> <code>${esc(session.sessionId.slice(0, 8))}</code>`)
   await startStreaming(chatId, session.sessionId, session.filepath)
 }
 
 async function handleKill(chatId: number, sessionIdPrefix: string) {
   const running = scanClaudeSessions(getClaudeDir())
   const entry = Object.values(running).find(p => p.sessionId.startsWith(sessionIdPrefix))
-  if (!entry) { await sendMsg(chatId, md(`No running session: ${sessionIdPrefix}`)); return }
+  if (!entry) { await sendMsg(chatId, `No running session: ${esc(sessionIdPrefix)}`); return }
   try {
     process.kill(entry.pid, 'SIGTERM')
-    await sendMsg(chatId, `✅ Killed \`${md(entry.sessionId.slice(0, 8))}\` \\(PID ${entry.pid}\\)`)
+    await sendMsg(chatId, `✅ Killed <code>${esc(entry.sessionId.slice(0, 8))}</code> (PID ${entry.pid})`)
   } catch {
-    await sendMsg(chatId, md('Failed to kill process.'))
+    await sendMsg(chatId, 'Failed to kill process.')
   }
 }
 
 async function handlePause(chatId: number, sessionIdPrefix: string) {
   const running = scanClaudeSessions(getClaudeDir())
   const entry = Object.values(running).find(p => p.sessionId.startsWith(sessionIdPrefix))
-  if (!entry) { await sendMsg(chatId, md('Session not found.')); return }
+  if (!entry) { await sendMsg(chatId, 'Session not found.'); return }
   try {
     process.kill(entry.pid, 'SIGSTOP')
-    await sendMsg(chatId, `⏸ Paused \`${md(entry.sessionId.slice(0, 8))}\``)
-  } catch { await sendMsg(chatId, md('Failed to pause.')) }
+    await sendMsg(chatId, `⏸ Paused <code>${esc(entry.sessionId.slice(0, 8))}</code>`)
+  } catch { await sendMsg(chatId, 'Failed to pause.') }
 }
 
 async function handleResume(chatId: number, sessionIdPrefix: string) {
   const running = scanClaudeSessions(getClaudeDir())
   const entry = Object.values(running).find(p => p.sessionId.startsWith(sessionIdPrefix))
-  if (!entry) { await sendMsg(chatId, md('Session not found.')); return }
+  if (!entry) { await sendMsg(chatId, 'Session not found.'); return }
   try {
     process.kill(entry.pid, 'SIGCONT')
-    await sendMsg(chatId, `▶ Resumed \`${md(entry.sessionId.slice(0, 8))}\``)
+    await sendMsg(chatId, `▶ Resumed <code>${esc(entry.sessionId.slice(0, 8))}</code>`)
     if (!activeStreams.has(entry.sessionId)) {
       const recent = getRecentSessions(30)
       const s = recent.find(r => r.sessionId === entry.sessionId)
       if (s) await startStreaming(chatId, s.sessionId, s.filepath)
     }
-  } catch { await sendMsg(chatId, md('Failed to resume.')) }
+  } catch { await sendMsg(chatId, 'Failed to resume.') }
 }
 
 async function handleLogs(chatId: number, prefix: string, nStr: string) {
   const n = Math.min(Math.max(parseInt(nStr, 10) || 5, 1), 20)
   const recent = getRecentSessions(30)
   const s = recent.find(x => x.sessionId.startsWith(prefix))
-  if (!s) { await sendMsg(chatId, md(`No session: ${prefix}`)); return }
+  if (!s) { await sendMsg(chatId, `No session: ${esc(prefix)}`); return }
 
   const msgs = parseJsonlFile(s.filepath).filter(m => !m.isMeta).slice(-n)
-  if (msgs.length === 0) { await sendMsg(chatId, md('No messages.')); return }
+  if (msgs.length === 0) { await sendMsg(chatId, 'No messages.'); return }
 
-  const lines: string[] = [`*Last ${msgs.length} messages* \`${md(s.sessionId.slice(0, 8))}\``, '']
+  const lines: string[] = [`<b>Last ${msgs.length} messages</b>`, '']
   for (const m of msgs) {
     const role = m.type === 'user' ? '👤' : '🤖'
-    const text = m.content
-      .map(b => {
-        if (b.type === 'text') return b.text ?? ''
-        if (b.type === 'tool_use') return `⚙ ${b.tool_name}`
-        if (b.type === 'thinking') return `💭 ${truncate(b.thinking ?? '', 80)}`
-        if (b.type === 'tool_result' && b.is_error) return `✗ error`
-        return ''
-      })
-      .filter(Boolean)
-      .join(' ')
-    lines.push(`${role} ${md(truncate(text, 400))}`)
+
+    // Build block list, collapsing consecutive tool_use with the same name
+    const blocks: string[] = []
+    let toolRun: { name: string; count: number } | null = null
+    for (const b of m.content) {
+      if (b.type === 'tool_use') {
+        const name = b.tool_name ?? 'Tool'
+        if (toolRun && toolRun.name === name) {
+          toolRun.count++
+        } else {
+          if (toolRun) blocks.push(toolRun.count > 1 ? `⚙ ${toolRun.name} ×${toolRun.count}` : `⚙ ${toolRun.name}`)
+          toolRun = { name, count: 1 }
+        }
+      } else {
+        if (toolRun) {
+          blocks.push(toolRun.count > 1 ? `⚙ ${toolRun.name} ×${toolRun.count}` : `⚙ ${toolRun.name}`)
+          toolRun = null
+        }
+        if (b.type === 'text' && b.text) blocks.push(b.text)
+        if (b.type === 'thinking') blocks.push(`💭 ${truncate(b.thinking ?? '', 80)}`)
+        if (b.type === 'tool_result' && b.is_error) blocks.push(`✗ error`)
+      }
+    }
+    if (toolRun) blocks.push(toolRun.count > 1 ? `⚙ ${toolRun.name} ×${toolRun.count}` : `⚙ ${toolRun.name}`)
+
+    const text = blocks.filter(Boolean).join(' ')
+    lines.push(`${role} ${esc(truncate(text, 400))}`)
   }
   await sendMsg(chatId, lines.join('\n'))
 }
@@ -652,23 +686,23 @@ async function handleLogs(chatId: number, prefix: string, nStr: string) {
 async function handleDiff(chatId: number, prefix: string) {
   const recent = getRecentSessions(30)
   const s = recent.find(x => x.sessionId.startsWith(prefix))
-  if (!s) { await sendMsg(chatId, md(`No session: ${prefix}`)); return }
+  if (!s) { await sendMsg(chatId, `No session: ${esc(prefix)}`); return }
 
   const cwd = findSessionProjectCwd(s.sessionId)
-  if (!cwd) { await sendMsg(chatId, md('Could not resolve session cwd.')); return }
+  if (!cwd) { await sendMsg(chatId, 'Could not resolve session cwd.'); return }
 
   try {
     const { stdout } = await execFileP('git', ['diff', '--stat', 'HEAD'], { cwd, maxBuffer: 2_000_000 })
     const { stdout: full } = await execFileP('git', ['diff', 'HEAD'], { cwd, maxBuffer: 10_000_000 })
     const summary = stdout.trim() || '(no changes)'
-    await sendMsg(chatId, `*Diff for* \`${md(s.sessionId.slice(0, 8))}\`\n\`\`\`\n${md(summary)}\n\`\`\``)
+    await sendMsg(chatId, `<b>Diff for</b> <code>${esc(s.sessionId.slice(0, 8))}</code>\n<pre>${esc(summary)}</pre>`)
     if (full.trim()) {
       // Send as file to avoid escaping hell
       await sendAsFile(chatId, full, `${s.sessionId.slice(0, 8)}.diff`)
     }
   } catch (err) {
     const msg = (err as Error).message
-    await sendMsg(chatId, `✗ ${md(truncate(msg, 300))}`)
+    await sendMsg(chatId, `✗ ${esc(truncate(msg, 300))}`)
   }
 }
 
@@ -689,23 +723,23 @@ async function sendAsFile(chatId: number, content: string, filename: string) {
 
 async function handleCd(chatId: number, arg: string) {
   const p = arg.trim()
-  if (!p) { await sendMsg(chatId, md(`Current: ${userCwd(chatId)}`)); return }
+  if (!p) { await sendMsg(chatId, `Current: <code>${esc(userCwd(chatId))}</code>`); return }
   try {
     if (!fs.statSync(p).isDirectory()) throw new Error()
   } catch {
-    await sendMsg(chatId, md(`Not a directory: ${p}`))
+    await sendMsg(chatId, `Not a directory: ${esc(p)}`)
     return
   }
   setUserCwd(chatId, p)
-  await sendMsg(chatId, `✅ Default dir set to \`${md(p)}\``)
+  await sendMsg(chatId, `✅ Default dir set to <code>${esc(p)}</code>`)
 }
 
 async function handlePwd(chatId: number) {
-  await sendMsg(chatId, `📁 \`${md(userCwd(chatId))}\``)
+  await sendMsg(chatId, `📁 <code>${esc(userCwd(chatId))}</code>`)
 }
 
 async function handleWhoami(chatId: number) {
-  await sendMsg(chatId, `Your chat id: \`${chatId}\``)
+  await sendMsg(chatId, `Your chat id: <code>${chatId}</code>`)
 }
 
 // Plain text reply — inject into active session
@@ -721,7 +755,7 @@ async function handleReply(chatId: number, text: string) {
     return
   }
 
-  await sendMsg(chatId, `📨 _Sending to session \`${md(active.sessionId.slice(0, 8))}\`..._`)
+  await sendMsg(chatId, `📨 <i>Sending to session <code>${esc(active.sessionId.slice(0, 8))}</code>...</i>`)
 
   const proc = spawn('claude', ['--resume', active.sessionId, '-p', body], {
     cwd: active.cwd, detached: true, stdio: 'ignore',
@@ -747,18 +781,18 @@ async function handleIncomingFile(
   await sendChatAction(chatId, 'typing')
   const dest = await downloadFile(fileId, UPLOAD_DIR, filename)
   if (!dest) {
-    await sendMsg(chatId, md('Failed to download file.'))
+    await sendMsg(chatId, 'Failed to download file.')
     return
   }
 
   if (isVoice) {
     const transcript = await transcribeVoice(dest)
     if (transcript) {
-      await sendMsg(chatId, `🎙 _${md(truncate(transcript, 300))}_`)
+      await sendMsg(chatId, `🎙 <i>${esc(truncate(transcript, 300))}</i>`)
       await handleReply(chatId, transcript)
       return
     }
-    await sendMsg(chatId, md('Voice received but transcription unavailable (set OPENAI_API_KEY).'))
+    await sendMsg(chatId, 'Voice received but transcription unavailable (set OPENAI_API_KEY).')
     queueAttachment(chatId, dest)
     return
   }
@@ -773,7 +807,7 @@ async function handleIncomingFile(
   queueAttachment(chatId, dest)
   await sendMsg(
     chatId,
-    `📎 Attached \`${md(path.basename(dest))}\`\nYour next message will include it as context\\.`,
+    `📎 Attached <code>${esc(path.basename(dest))}</code>\nYour next message will include it as context.`,
   )
 }
 
@@ -814,9 +848,9 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     case 'continue': {
       await answerCallback(queryId, 'Continuing...')
       const recent = getRecentSessions(30).find(r => r.sessionId.startsWith(id))
-      if (!recent) { await sendMsg(chatId, md(`No session: ${id}`)); return }
+      if (!recent) { await sendMsg(chatId, `No session: ${esc(id)}`); return }
       const cwd = findSessionProjectCwd(recent.sessionId) ?? userCwd(chatId)
-      await sendMsg(chatId, `🔁 *Reply* below to continue \`${md(id)}\` in \`${md(path.basename(cwd))}\``)
+      await sendMsg(chatId, `🔁 <b>Reply</b> below to continue <code>${esc(id)}</code> in <code>${esc(path.basename(cwd))}</code>`)
       // Spawn a watcher; user's next plain message will be injected by handleReply
       await startStreaming(chatId, recent.sessionId, recent.filepath, { silent: true })
       break
@@ -886,11 +920,11 @@ async function poll() {
 
         if (!allowed(chatId)) {
           audit(chatId, uname, 'denied', {})
-          await sendMsg(chatId, md(`Unauthorized. Your chat id: ${chatId}`))
+          await sendMsg(chatId, `Unauthorized. Your chat id: <code>${chatId}</code>`)
           continue
         }
         if (rateLimited(chatId)) {
-          await sendMsg(chatId, md('⏱ Rate limit reached. Slow down.'))
+          await sendMsg(chatId, '⏱ Rate limit reached. Slow down.')
           continue
         }
 
