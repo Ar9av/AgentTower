@@ -448,6 +448,55 @@ setInterval(() => {
   }
 }, 5_000)
 
+// ── Stale-session watcher ──────────────────────────────────────────────────
+// Notifies when a session is running but its JSONL hasn't seen new activity
+// in STALE_THRESHOLD_MS. Fires once per stall; resets when activity resumes,
+// so the same session can alert again if it gets stuck later.
+
+const STALE_THRESHOLD_MS = 10 * 60 * 1000   // 10 minutes
+const STALE_CHECK_MS     = 60 * 1000        // check every minute
+const staleNotified = new Map<string, number>()   // sessionId → mtime at time of notify
+
+function sessionJsonlMtime(sessionId: string, cwd: string): number {
+  // Locate the session's JSONL under ~/.claude/projects/<encoded-cwd>/<sid>.jsonl
+  const projectsDir = path.join(getClaudeDir(), 'projects')
+  try {
+    for (const d of fs.readdirSync(projectsDir)) {
+      const f = path.join(projectsDir, d, `${sessionId}.jsonl`)
+      if (fs.existsSync(f)) return fs.statSync(f).mtimeMs
+    }
+  } catch {}
+  return 0
+}
+
+setInterval(() => {
+  const running = scanClaudeSessions(getClaudeDir())
+  const now = Date.now()
+  for (const [id, p] of Object.entries(running)) {
+    // Skip sessions we're actively streaming — user can already see activity.
+    if (activeStreams.has(id)) { staleNotified.delete(id); continue }
+    const mtime = sessionJsonlMtime(id, p.cwd)
+    if (!mtime) continue
+    const idleMs = now - mtime
+    // Reset notification state when activity resumes.
+    const lastNotifiedMtime = staleNotified.get(id)
+    if (lastNotifiedMtime && mtime > lastNotifiedMtime) staleNotified.delete(id)
+    if (idleMs < STALE_THRESHOLD_MS) continue
+    if (staleNotified.has(id)) continue   // already warned for this stall
+    staleNotified.set(id, mtime)
+    const short = id.slice(0, 8)
+    const mins = Math.round(idleMs / 60_000)
+    notifyChats(
+      `⚠️ <b>Session idle</b> for ${mins}m\n<code>${esc(short)}</code>  <i>${esc(path.basename(p.cwd))}</i>\nStill running — may be stuck or waiting on a tool.`,
+      sessionKeyboard(id, true, false),
+    )
+  }
+  // Garbage-collect entries for sessions no longer running.
+  for (const id of staleNotified.keys()) {
+    if (!running[id]) staleNotified.delete(id)
+  }
+}, STALE_CHECK_MS)
+
 // ── Command handlers ───────────────────────────────────────────────────────
 
 async function handleStart(chatId: number) {
@@ -464,6 +513,7 @@ async function handleStart(chatId: number) {
     `<b>Navigation</b>`,
     `/sessions — list recent sessions (with buttons)`,
     `/status — running sessions`,
+    `/idle — running sessions sorted by idle time`,
     `/logs &lt;id&gt; [n] — last n messages from a session`,
     `/diff &lt;id&gt; — git diff in the session's cwd`,
     ``,
@@ -505,6 +555,32 @@ async function handleSessions(chatId: number) {
       chatId,
       `${icon} <b>${esc(s.projectDisplayName)}</b> (${esc(age)})\n<i>${esc(prompt)}</i>`,
       sessionKeyboard(s.sessionId, pstate === 'running' || pstate === 'paused', pstate === 'paused'),
+    )
+  }
+}
+
+async function handleIdle(chatId: number) {
+  const running = scanClaudeSessions(getClaudeDir())
+  const now = Date.now()
+  const rows: Array<{ id: string; cwd: string; idleMs: number }> = []
+  for (const [id, p] of Object.entries(running)) {
+    const mtime = sessionJsonlMtime(id, p.cwd)
+    if (!mtime) continue
+    rows.push({ id, cwd: p.cwd, idleMs: now - mtime })
+  }
+  if (rows.length === 0) {
+    await sendMsg(chatId, 'No running sessions.')
+    return
+  }
+  rows.sort((a, b) => b.idleMs - a.idleMs)
+  for (const r of rows) {
+    const mins = Math.floor(r.idleMs / 60_000)
+    const secs = Math.floor((r.idleMs % 60_000) / 1000)
+    const icon = r.idleMs >= STALE_THRESHOLD_MS ? '⚠️' : '🟢'
+    await sendMsg(
+      chatId,
+      `${icon} <code>${esc(r.id.slice(0, 8))}</code>  idle ${mins}m${secs}s\n<i>${esc(path.basename(r.cwd))}</i>`,
+      sessionKeyboard(r.id, true, false),
     )
   }
 }
@@ -964,6 +1040,7 @@ async function poll() {
         if (matchCmd('/start') || matchCmd('/help')) { await handleStart(chatId); continue }
         if (matchCmd('/sessions'))                   { await handleSessions(chatId); continue }
         if (matchCmd('/status'))                     { await handleStatus(chatId); continue }
+        if (matchCmd('/idle'))                       { await handleIdle(chatId); continue }
         if (matchCmd('/whoami'))                     { await handleWhoami(chatId); continue }
         if (matchCmd('/pwd'))                        { await handlePwd(chatId); continue }
         if (matchCmd('/cd'))                         { await handleCd(chatId, args('/cd')); continue }
