@@ -664,6 +664,25 @@ export function resolveProjectPath(dirName: string): string {
   return decodeProjectPath(dirName)
 }
 
+/** Find a session file by full ID or prefix. Returns { sessionId, filepath, projectDirName } or null. */
+export function findSessionByPrefix(prefix: string): { sessionId: string; filepath: string; projectDirName: string } | null {
+  const projectsDir = getProjectsDir()
+  let dirs: string[]
+  try { dirs = fs.readdirSync(projectsDir) } catch { return null }
+  for (const d of dirs) {
+    const dirPath = path.join(projectsDir, d)
+    let files: string[]
+    try { files = fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl')) } catch { continue }
+    for (const f of files) {
+      const sid = path.basename(f, '.jsonl')
+      if (sid.startsWith(prefix)) {
+        return { sessionId: sid, filepath: path.join(dirPath, f), projectDirName: d }
+      }
+    }
+  }
+  return null
+}
+
 export function findSessionProjectCwd(sessionId: string): string | null {
   const projectsDir = path.join(process.env.CLAUDE_DIR || path.join(os.homedir(), ".claude"), "projects")
   let dirs: string[]

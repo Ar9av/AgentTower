@@ -17,6 +17,7 @@ import {
   getClaudeDir,
   decodeProjectPath,
   findSessionProjectCwd,
+  findSessionByPrefix,
 } from '../lib/claude-fs'
 import { scanClaudeSessions, getProcessState } from '../lib/process'
 import { resolveTelegramRuntimeConfig } from '../lib/integrations'
@@ -583,6 +584,17 @@ setInterval(() => {
 
 // ── /live auto-updating dashboard ──────────────────────────────────────────
 
+// ── Session lookup helper (recent first, then full scan) ──────────────────
+
+function resolveSession(prefix: string): { sessionId: string; filepath: string; projectDirName: string } | null {
+  // Try recent sessions first (fast, cached)
+  const recent = getRecentSessions(50)
+  const match = recent.find(r => r.sessionId.startsWith(prefix))
+  if (match) return { sessionId: match.sessionId, filepath: match.filepath, projectDirName: match.projectDirName }
+  // Fall back to scanning all session files (handles old sessions)
+  return findSessionByPrefix(prefix)
+}
+
 // Track which sessions are being live-streamed per chat so /stoplive can stop them
 const liveStreamChats = new Map<number, string>()  // chatId → sessionId being streamed
 
@@ -641,29 +653,25 @@ async function handleStopLive(chatId: number) {
 }
 
 async function handleGoLive(chatId: number, sessionIdPrefix: string) {
-  // Stop any existing live stream for this chat
   const prev = liveStreamChats.get(chatId)
   if (prev) {
     const prevStream = activeStreams.get(prev)
     if (prevStream) prevStream.done = true
   }
 
-  const recent = getRecentSessions(50)
-  const session = recent.find(s => s.sessionId.startsWith(sessionIdPrefix))
+  const session = resolveSession(sessionIdPrefix)
   if (!session) {
     await sendMsg(chatId, `Session not found: <code>${esc(sessionIdPrefix)}</code>`)
     return
   }
 
   liveStreamChats.set(chatId, session.sessionId)
-  await sendMsg(chatId, `📡 <b>Live</b> — <b>${esc(session.projectDisplayName)}</b> <code>${esc(sessionIdPrefix)}</code>\n<i>Use /stoplive to stop streaming.</i>`)
+  await sendMsg(chatId, `📡 <b>Live</b> — <b>${esc(path.basename(decodeProjectPath(session.projectDirName)))}</b> <code>${esc(sessionIdPrefix)}</code>\n<i>Use /stoplive to stop streaming.</i>`)
   await startStreaming(chatId, session.sessionId, session.filepath)
-  // Clean up when stream ends naturally
   liveStreamChats.delete(chatId)
 }
 
 async function handleChat(chatId: number, sessionIdPrefix: string) {
-  // Stop any live stream first
   const prev = liveStreamChats.get(chatId)
   if (prev) {
     const prevStream = activeStreams.get(prev)
@@ -671,16 +679,16 @@ async function handleChat(chatId: number, sessionIdPrefix: string) {
     liveStreamChats.delete(chatId)
   }
 
-  const recent = getRecentSessions(50)
-  const session = recent.find(s => s.sessionId.startsWith(sessionIdPrefix))
+  const session = resolveSession(sessionIdPrefix)
   if (!session) {
     await sendMsg(chatId, `Session not found: <code>${esc(sessionIdPrefix)}</code>`)
     return
   }
 
   // Show last 5 messages as context
+  const projectName = path.basename(decodeProjectPath(session.projectDirName))
   const msgs = parseJsonlFile(session.filepath).filter(m => !m.isMeta).slice(-5)
-  const lines: string[] = [`💬 <b>${esc(session.projectDisplayName)}</b>  <code>${esc(sessionIdPrefix)}</code>\n`]
+  const lines: string[] = [`💬 <b>${esc(projectName)}</b>  <code>${esc(sessionIdPrefix)}</code>\n`]
   for (const m of msgs) {
     const role = m.type === 'user' ? '👤' : '🤖'
     const text = m.content.filter(b => b.type === 'text').map(b => b.text ?? '').join(' ')
@@ -1286,10 +1294,9 @@ async function handleTask(chatId: number, rawPrompt: string, mode: TaskMode) {
 }
 
 async function handleWatch(chatId: number, sessionIdPrefix: string) {
-  const recent = getRecentSessions(30)
-  const session = recent.find(s => s.sessionId.startsWith(sessionIdPrefix))
+  const session = resolveSession(sessionIdPrefix)
   if (!session) {
-    await sendMsg(chatId, `No session found matching: ${esc(sessionIdPrefix)}`)
+    await sendMsg(chatId, `No session found: <code>${esc(sessionIdPrefix)}</code>`)
     return
   }
   await sendMsg(chatId, `👁 <b>Watching</b> <code>${esc(session.sessionId.slice(0, 8))}</code>`)
@@ -1335,10 +1342,14 @@ async function handleResume(chatId: number, sessionIdPrefix: string) {
 
 async function handleLogs(chatId: number, prefix: string, nStr: string) {
   const n = Math.min(Math.max(parseInt(nStr, 10) || 5, 1), 20)
-  const recent = getRecentSessions(30)
-  // If no prefix, use the most recent session
-  const s = prefix ? recent.find(x => x.sessionId.startsWith(prefix)) : recent[0]
-  if (!s) { await sendMsg(chatId, prefix ? `No session: ${esc(prefix)}` : 'No sessions found.'); return }
+  let s: { sessionId: string; filepath: string; projectDirName: string; projectDisplayName?: string } | null = null
+  if (prefix) {
+    s = resolveSession(prefix)
+  } else {
+    const recent = getRecentSessions(1)
+    s = recent[0] ? { sessionId: recent[0].sessionId, filepath: recent[0].filepath, projectDirName: recent[0].projectDirName, projectDisplayName: recent[0].projectDisplayName } : null
+  }
+  if (!s) { await sendMsg(chatId, prefix ? `No session: <code>${esc(prefix)}</code>` : 'No sessions found.'); return }
 
   const msgs = parseJsonlFile(s.filepath).filter(m => !m.isMeta).slice(-n)
   if (msgs.length === 0) { await sendMsg(chatId, 'No messages.'); return }
@@ -1377,7 +1388,8 @@ async function handleLogs(chatId: number, prefix: string, nStr: string) {
 
   const short = s.sessionId.slice(0, 8)
   lines.push('')
-  lines.push(`<i>${esc(s.projectDisplayName)} · ${esc(short)}</i>`)
+  const displayName = s.projectDisplayName ?? path.basename(decodeProjectPath(s.projectDirName))
+  lines.push(`<i>${esc(displayName)} · ${esc(short)}</i>`)
 
   const buttons: Btn[][] = [[
     { text: '📜 Last 5', callback_data: `logs5:${short}` },
@@ -1392,9 +1404,8 @@ async function handleLogs(chatId: number, prefix: string, nStr: string) {
 }
 
 async function handleDiff(chatId: number, prefix: string) {
-  const recent = getRecentSessions(30)
-  const s = recent.find(x => x.sessionId.startsWith(prefix))
-  if (!s) { await sendMsg(chatId, `No session: ${esc(prefix)}`); return }
+  const s = resolveSession(prefix)
+  if (!s) { await sendMsg(chatId, `No session: <code>${esc(prefix)}</code>`); return }
 
   const cwd = findSessionProjectCwd(s.sessionId)
   if (!cwd) { await sendMsg(chatId, 'Could not resolve session cwd.'); return }
@@ -1621,7 +1632,7 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     case 'kill':   await answerCallback(queryId, 'Killing...'); await handleKill(chatId, id);   break
     case 'pause':  await answerCallback(queryId, 'Pausing...'); await handlePause(chatId, id);  break
     case 'resume': await answerCallback(queryId, 'Resuming...'); await handleResume(chatId, id); break
-    case 'watch':  await answerCallback(queryId, 'Watching...'); await handleWatch(chatId, id);  break
+    case 'watch':  await answerCallback(queryId, 'Watching...'); await handleWatch(chatId, id); break
     case 'golive': await answerCallback(queryId, 'Going live...'); await handleGoLive(chatId, id); break
     case 'chat':   await answerCallback(queryId, 'Loading...');    await handleChat(chatId, id);   break
     case 'logs':   await answerCallback(queryId);               await handleLogs(chatId, id, '5'); break
@@ -1631,10 +1642,9 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     case 'last':   await answerCallback(queryId);               await handleLogs(chatId, '', '10'); break
     case 'lastuser': {
       await answerCallback(queryId)
-      const recent = getRecentSessions(50)
-      const match = recent.find(r => r.sessionId.startsWith(id))
-      if (!match) { await sendMsg(chatId, `Session not found: <code>${esc(id)}</code>`); break }
-      const msgs = parseJsonlFile(match.filepath).filter(m => !m.isMeta && m.type === 'user')
+      const luMatch = resolveSession(id)
+      if (!luMatch) { await sendMsg(chatId, `Session not found: <code>${esc(id)}</code>`); break }
+      const msgs = parseJsonlFile(luMatch.filepath).filter(m => !m.isMeta && m.type === 'user')
       const last = msgs[msgs.length - 1]
       if (!last) { await sendMsg(chatId, 'No user messages found.'); break }
       const text = last.content.filter(b => b.type === 'text').map(b => b.text ?? '').join(' ')
@@ -1642,11 +1652,10 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
       break
     }
     case 'switch': {
-      const recent = getRecentSessions(50)
-      const match = recent.find(r => r.sessionId.startsWith(id))
+      const match = resolveSession(id)
       if (!match) { await answerCallback(queryId, 'Session not found'); break }
-      const procs = scanClaudeSessions(getClaudeDir())
-      if (!procs[match.sessionId]) { await answerCallback(queryId, 'Session not running'); break }
+      const switchProcs = scanClaudeSessions(getClaudeDir())
+      if (!switchProcs[match.sessionId]) { await answerCallback(queryId, 'Session not running'); break }
       setActiveSessionId(chatId, match.sessionId)
       await answerCallback(queryId, `Switched to ${path.basename(findSessionProjectCwd(match.sessionId) ?? '')}`)
       updatePinnedStatuses()
@@ -1655,12 +1664,12 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     case 'diff':   await answerCallback(queryId, 'Running git diff...'); await handleDiff(chatId, id); break
     case 'continue': {
       await answerCallback(queryId, 'Loading…')
-      const recent = getRecentSessions(50).find(r => r.sessionId.startsWith(id))
-      if (!recent) { await sendMsg(chatId, `Session not found: <code>${esc(id)}</code>.\nTry /sessions to see available sessions.`); break }
-      const cwd = findSessionProjectCwd(recent.sessionId) ?? userCwd(chatId)
+      const found = resolveSession(id)
+      if (!found) { await sendMsg(chatId, `Session not found: <code>${esc(id)}</code>.\nTry /recent to see available sessions.`); break }
+      const cwd = findSessionProjectCwd(found.sessionId) ?? userCwd(chatId)
 
       // Show last 5 messages as context
-      const msgs = parseJsonlFile(recent.filepath).filter(m => !m.isMeta).slice(-5)
+      const msgs = parseJsonlFile(found.filepath).filter(m => !m.isMeta).slice(-5)
       const lines: string[] = [`💬 <b>${esc(path.basename(cwd))}</b>  <code>${esc(id)}</code>\n`]
       for (const m of msgs) {
         const role = m.type === 'user' ? '👤' : '🤖'
@@ -1673,10 +1682,10 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
       lines.push(`<i>Reply below to continue this session.</i>`)
 
       // Set this as the active session so handleReply targets it
-      setActiveSessionId(chatId, recent.sessionId)
+      setActiveSessionId(chatId, found.sessionId)
       updatePinnedStatuses()
 
-      await sendMsg(chatId, lines.join('\n'), sessionKeyboard(recent.sessionId, false, false))
+      await sendMsg(chatId, lines.join('\n'), sessionKeyboard(found.sessionId, false, false))
       break
     }
     default:
