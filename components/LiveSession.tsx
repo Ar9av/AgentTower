@@ -385,7 +385,7 @@ export default function LiveSession({
       <div className="glass-lg" style={{
         padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
         flexShrink: 0, borderLeft: 'none', borderRight: 'none', borderTop: 'none', borderRadius: 0,
-        minHeight: 48,
+        minHeight: 48, position: 'relative', zIndex: 10,
       }}>
         <button
           onClick={() => router.back()}

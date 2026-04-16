@@ -37,11 +37,12 @@ export default function Nav() {
         gap: 12,
         position: 'sticky',
         top: 0,
-        zIndex: 100,
+        zIndex: 500,
         borderLeft: 'none',
         borderRight: 'none',
         borderTop: 'none',
         borderRadius: 0,
+        WebkitTapHighlightColor: 'transparent',
       }}>
         {/* Hamburger — mobile only */}
         <button
@@ -53,7 +54,7 @@ export default function Nav() {
           ☰
         </button>
 
-        {/* Logo */}
+        {/* Logo — taps to home */}
         <Link href="/projects" style={{
           fontWeight: 700,
           fontSize: 15,
@@ -63,6 +64,9 @@ export default function Nav() {
           alignItems: 'center',
           gap: 7,
           flexShrink: 0,
+          padding: '6px 4px',
+          minHeight: 36,
+          minWidth: 36,
         }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
