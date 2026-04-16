@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment'
 
 interface Props {
   projectPath: string
@@ -12,17 +13,39 @@ export default function NewSessionForm({ projectPath }: Props) {
   const [prompt, setPrompt] = useState('')
   const [launching, setLaunching] = useState(false)
   const [error, setError] = useState('')
+  const [image, setImage] = useState<AttachedImage | null>(null)
+
+  const handlePaste = useImagePaste(setImage)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!prompt.trim() || launching) return
+    if ((!prompt.trim() && !image) || launching) return
     setLaunching(true)
     setError('')
     try {
+      let finalPrompt = prompt.trim()
+
+      // Upload image if attached
+      if (image) {
+        try {
+          const uploadRes = await fetch('/api/upload-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: image.base64, mediaType: image.mediaType }),
+          })
+          if (uploadRes.ok) {
+            const { filepath } = await uploadRes.json()
+            finalPrompt = finalPrompt ? `${finalPrompt}\n\n[Image: ${filepath}]` : `[Image: ${filepath}]`
+          }
+        } catch {
+          // Continue without image if upload fails
+        }
+      }
+
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_path: projectPath, prompt: prompt.trim() }),
+        body: JSON.stringify({ project_path: projectPath, prompt: finalPrompt }),
       })
       if (!res.ok) {
         const d = await res.json()
@@ -30,6 +53,7 @@ export default function NewSessionForm({ projectPath }: Props) {
         return
       }
       setPrompt('')
+      setImage(null)
       setOpen(false)
       setTimeout(() => router.refresh(), 2000)
     } finally {
@@ -39,9 +63,8 @@ export default function NewSessionForm({ projectPath }: Props) {
 
   return (
     <div style={{ marginBottom: open ? 20 : 0 }}>
-      {/* Toggle button — always visible */}
       <button
-        onClick={() => { setOpen(v => !v); setPrompt(''); setError('') }}
+        onClick={() => { setOpen(v => !v); setPrompt(''); setImage(null); setError('') }}
         className="glass-btn"
         style={{
           fontSize: 13,
@@ -53,7 +76,6 @@ export default function NewSessionForm({ projectPath }: Props) {
         {open ? '✕ Cancel' : '+ New session'}
       </button>
 
-      {/* Inline expanded form — renders as a block BELOW the header */}
       {open && (
         <div
           className="glass"
@@ -71,7 +93,8 @@ export default function NewSessionForm({ projectPath }: Props) {
             </span>
           </p>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 10 }}>
+          <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <ImageAttachment image={image} onAttach={setImage} onRemove={() => setImage(null)} />
             <textarea
               className="glass-input"
               value={prompt}
@@ -79,7 +102,8 @@ export default function NewSessionForm({ projectPath }: Props) {
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e) }
               }}
-              placeholder="What do you want Claude to do? (Enter to launch, Shift+Enter for newline)"
+              onPaste={handlePaste}
+              placeholder="What do you want Claude to do? Paste an image with Cmd+V"
               autoFocus
               rows={2}
               style={{ flex: 1, fontSize: 14, padding: '10px 14px', borderRadius: 10, resize: 'none', lineHeight: 1.5 }}
@@ -87,10 +111,10 @@ export default function NewSessionForm({ projectPath }: Props) {
             <button
               type="submit"
               className="glass-btn-prominent"
-              disabled={!prompt.trim() || launching}
+              disabled={(!prompt.trim() && !image) || launching}
               style={{ width: 'auto', padding: '0 20px', fontSize: 14, flexShrink: 0, alignSelf: 'stretch' }}
             >
-              {launching ? 'Starting…' : 'Launch ↗'}
+              {launching ? '…' : 'Launch ↗'}
             </button>
           </form>
 
