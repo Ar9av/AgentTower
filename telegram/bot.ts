@@ -716,7 +716,17 @@ function buildStatusText(chatId?: number): string {
   const now = Date.now()
   const activeId = chatId ? getActiveSessionId(chatId) : null
 
-  if (entries.length === 0) return `🗼 <b>Control Center</b>\n\n✨ All clear — no running sessions.\n\n<i>${new Date().toLocaleTimeString('en', { hour12: false })}</i>`
+  if (entries.length === 0) {
+    // Show active session context even when nothing is running
+    let activeInfo = ''
+    if (activeId) {
+      const recent = getRecentSessions(50)
+      const match = recent.find(r => r.sessionId === activeId)
+      if (match) activeInfo = `\n💬 Active: <b>${esc(match.projectDisplayName)}</b> <code>${esc(activeId.slice(0, 8))}</code>\n<i>Plain text resumes this session.</i>`
+    }
+    if (!activeInfo) activeInfo = `\n💬 No active session.\n<i>Plain text goes to ~/brain.</i>`
+    return `🗼 <b>Control Center</b>\n\n✨ No running sessions.${activeInfo}\n\n<i>${new Date().toLocaleTimeString('en', { hour12: false })}</i>`
+  }
 
   const rows: string[] = [`🗼 <b>Control Center</b>  (${entries.length} active)\n`]
   for (const [id, p] of entries) {
@@ -1448,27 +1458,67 @@ async function handleReply(chatId: number, text: string) {
   const attachments = consumeAttachments(chatId)
   const body = attachmentPreamble(attachments) + text
 
-  if (allRunning.length === 0) {
-    await handleTask(chatId, body, 'skip')
+  // Prefer the user's selected active session
+  const preferred = getActiveSessionId(chatId)
+
+  // 1. If active session is running → send to it
+  const activeRunning = preferred ? allRunning.find(p => p.sessionId === preferred) : null
+  if (activeRunning) {
+    await sendMsg(chatId, `📨 <i>Sending to <b>${esc(path.basename(activeRunning.cwd))}</b> <code>${esc(activeRunning.sessionId.slice(0, 8))}</code></i>`, {}, true)
+    const proc = spawn('claude', ['--resume', activeRunning.sessionId, '-p', body], {
+      cwd: activeRunning.cwd, detached: true, stdio: 'ignore',
+    })
+    proc.unref()
+    if (!activeStreams.has(activeRunning.sessionId)) {
+      const recent = getRecentSessions(20)
+      const s = recent.find(r => r.sessionId === activeRunning.sessionId)
+      if (s) await startStreaming(chatId, activeRunning.sessionId, s.filepath)
+    }
     return
   }
 
-  // Prefer the user's selected active session, fall back to first running
-  const preferred = getActiveSessionId(chatId)
-  const active = (preferred ? allRunning.find(p => p.sessionId === preferred) : null) ?? allRunning[0]
-
-  await sendMsg(chatId, `📨 <i>Sending to <b>${esc(path.basename(active.cwd))}</b> <code>${esc(active.sessionId.slice(0, 8))}</code></i>`)
-
-  const proc = spawn('claude', ['--resume', active.sessionId, '-p', body], {
-    cwd: active.cwd, detached: true, stdio: 'ignore',
-  })
-  proc.unref()
-
-  if (!activeStreams.has(active.sessionId)) {
-    const recent = getRecentSessions(20)
-    const s = recent.find(r => r.sessionId === active.sessionId)
-    if (s) await startStreaming(chatId, active.sessionId, s.filepath)
+  // 2. If active session is set but not running → resume it
+  if (preferred) {
+    const recent = getRecentSessions(50)
+    const match = recent.find(r => r.sessionId === preferred)
+    if (match) {
+      const cwd = findSessionProjectCwd(match.sessionId) ?? userCwd(chatId)
+      await sendMsg(chatId, `📨 <i>Resuming <b>${esc(path.basename(cwd))}</b> <code>${esc(preferred.slice(0, 8))}</code></i>`, {}, true)
+      const proc = spawn('claude', ['--resume', preferred, '-p', body], {
+        cwd, detached: true, stdio: 'ignore',
+      })
+      proc.unref()
+      if (!activeStreams.has(preferred)) {
+        await new Promise(r => setTimeout(r, 1500))
+        const fresh = getRecentSessions(10)
+        const s = fresh.find(r => r.sessionId === preferred) ?? fresh[0]
+        if (s) await startStreaming(chatId, s.sessionId, s.filepath)
+      }
+      return
+    }
   }
+
+  // 3. If any session is running but none selected → pick the first
+  if (allRunning.length > 0) {
+    const active = allRunning[0]
+    setActiveSessionId(chatId, active.sessionId)
+    await sendMsg(chatId, `📨 <i>Sending to <b>${esc(path.basename(active.cwd))}</b> <code>${esc(active.sessionId.slice(0, 8))}</code></i>`, {}, true)
+    const proc = spawn('claude', ['--resume', active.sessionId, '-p', body], {
+      cwd: active.cwd, detached: true, stdio: 'ignore',
+    })
+    proc.unref()
+    if (!activeStreams.has(active.sessionId)) {
+      const recent = getRecentSessions(20)
+      const s = recent.find(r => r.sessionId === active.sessionId)
+      if (s) await startStreaming(chatId, active.sessionId, s.filepath)
+    }
+    return
+  }
+
+  // 4. Nothing running, no active session → send to ~/brain
+  fs.mkdirSync(BRAIN_DIR, { recursive: true })
+  await sendMsg(chatId, `🧠 <i>No active session — sending to <b>brain</b></i>`, {}, true)
+  await spawnTask(chatId, BRAIN_DIR, body, 'skip')
 }
 
 // ── File uploads ───────────────────────────────────────────────────────────
