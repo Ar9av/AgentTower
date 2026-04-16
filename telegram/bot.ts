@@ -785,6 +785,7 @@ async function handleStart(chatId: number) {
     `/diff &lt;id&gt; — git diff in the session's cwd`,
     ``,
     `<b>Control</b>`,
+    `/quick — quick-action buttons`,
     `/kill /pause /resume /watch &lt;id&gt;`,
     ``,
     `<b>Settings</b>`,
@@ -855,6 +856,43 @@ async function handleIdle(chatId: number) {
 
 async function handleStatus(chatId: number) {
   await handlePinnedStatus(chatId)
+}
+
+async function handleQuick(chatId: number) {
+  const running = scanClaudeSessions(getClaudeDir())
+  const count = Object.keys(running).length
+
+  const rows: Btn[][] = [
+    [
+      { text: '📡 Live', callback_data: 'quick:live' },
+      { text: '📋 Sessions', callback_data: 'quick:sessions' },
+      { text: '🗼 Status', callback_data: 'quick:status' },
+    ],
+    [
+      { text: '⏱ Idle', callback_data: 'quick:idle' },
+      { text: '📁 PWD', callback_data: 'quick:pwd' },
+    ],
+  ]
+
+  // Add running session controls if any
+  if (count > 0) {
+    const entries = Object.entries(running).slice(0, 3)
+    for (const [id, p] of entries) {
+      const short = id.slice(0, 8)
+      const name = path.basename(p.cwd)
+      rows.push([
+        { text: `👁 ${name}`, callback_data: `watch:${short}` },
+        { text: `⏸ Pause`, callback_data: `pause:${short}` },
+        { text: `✕ Kill`, callback_data: `kill:${short}` },
+      ])
+    }
+  }
+
+  await sendMsg(
+    chatId,
+    `⚡ <b>Quick Actions</b>${count > 0 ? `\n\n🟢 ${count} running` : '\n\n✨ No running sessions'}`,
+    { reply_markup: { inline_keyboard: rows } },
+  )
 }
 
 async function handleBriefingConfig(chatId: number, arg: string) {
@@ -1191,6 +1229,11 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     case 'watch':  await answerCallback(queryId, 'Watching...'); await handleWatch(chatId, id);  break
     case 'logs':   await answerCallback(queryId);               await handleLogs(chatId, id, '5'); break
     case 'diff':   await answerCallback(queryId, 'Running git diff...'); await handleDiff(chatId, id); break
+    case 'quick:live':     await answerCallback(queryId); await handleLive(chatId); break
+    case 'quick:sessions': await answerCallback(queryId); await handleSessions(chatId); break
+    case 'quick:status':   await answerCallback(queryId); await handleStatus(chatId); break
+    case 'quick:idle':     await answerCallback(queryId); await handleIdle(chatId); break
+    case 'quick:pwd':      await answerCallback(queryId); await handlePwd(chatId); break
     case 'continue': {
       await answerCallback(queryId, 'Continuing...')
       const recent = getRecentSessions(30).find(r => r.sessionId.startsWith(id))
@@ -1312,6 +1355,7 @@ async function poll() {
         if (matchCmd('/status'))                     { await handleStatus(chatId); continue }
         if (matchCmd('/idle'))                       { await handleIdle(chatId); continue }
         if (matchCmd('/live'))                       { await handleLive(chatId); continue }
+        if (matchCmd('/quick') || matchCmd('/q'))    { await handleQuick(chatId); continue }
         if (matchCmd('/briefing'))                   { await handleBriefingConfig(chatId, args('/briefing')); continue }
         if (matchCmd('/whoami'))                     { await handleWhoami(chatId); continue }
         if (matchCmd('/pwd'))                        { await handlePwd(chatId); continue }
@@ -1357,6 +1401,28 @@ function relTime(ms: number): string {
 process.on('SIGINT', () => { console.log('\nShutting down.'); process.exit(0) })
 process.on('SIGTERM', () => process.exit(0))
 
+// ── Register bot commands on startup ───────────────────────────────────────
+
+async function registerCommands() {
+  await tg('setMyCommands', {
+    commands: [
+      { command: 'task',      description: 'Start a new Claude session' },
+      { command: 'safetask',  description: 'Start with default permissions' },
+      { command: 'plan',      description: 'Start in plan/read-only mode' },
+      { command: 'live',      description: 'Auto-updating live dashboard' },
+      { command: 'sessions',  description: 'List recent sessions' },
+      { command: 'status',    description: 'Pinned control center' },
+      { command: 'idle',      description: 'Sessions sorted by idle time' },
+      { command: 'briefing',  description: 'Configure daily briefing' },
+      { command: 'cd',        description: 'Set default project directory' },
+      { command: 'pwd',       description: 'Show current default directory' },
+      { command: 'help',      description: 'Show all commands' },
+    ],
+  })
+  console.log('   Commands registered with Telegram')
+}
+
 // ── Start ──────────────────────────────────────────────────────────────────
 
+registerCommands()
 poll()
