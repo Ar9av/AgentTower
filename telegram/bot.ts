@@ -1782,8 +1782,10 @@ async function poll() {
 
         audit(chatId, uname, 'msg', { text: text.slice(0, 200) })
 
-        const matchCmd = (cmd: string) => text === cmd || text.startsWith(cmd + ' ')
-        const args = (cmd: string) => text.slice(cmd.length).trim()
+        // Strip @botname suffix from commands (Telegram appends it when tapped from menu)
+        const cleanText = text.replace(/^(\/\w+)@\w+/, '$1')
+        const matchCmd = (cmd: string) => cleanText === cmd || cleanText.startsWith(cmd + ' ')
+        const args = (cmd: string) => cleanText.slice(cmd.length).trim()
 
         if (matchCmd('/start') || matchCmd('/help')) { await handleStart(chatId); continue }
         if (matchCmd('/sessions'))                   { await handleSessions(chatId); continue }
