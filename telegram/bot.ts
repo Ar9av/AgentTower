@@ -856,6 +856,65 @@ async function sendBriefing() {
   saveState(state)
 }
 
+async function handleRecent(chatId: number) {
+  const recent = getRecentSessions(5)
+  const running = scanClaudeSessions(getClaudeDir())
+
+  if (recent.length === 0) {
+    await sendMsg(chatId, '📋 <b>Recent Sessions</b>\n\nNo sessions found. Use /task to start one.')
+    return
+  }
+
+  await sendMsg(chatId, `📋 <b>Recent Sessions</b>  (last ${recent.length})`)
+
+  for (const s of recent) {
+    const short = s.sessionId.slice(0, 8)
+    const proc = running[s.sessionId]
+    const pstate = proc ? getProcessState(proc.pid) : 'dead'
+    const isRunning = pstate === 'running' || pstate === 'paused'
+    const isPaused = pstate === 'paused'
+    const icon = pstate === 'running' ? '🟢 Running' : pstate === 'paused' ? '🟡 Paused' : '⚫ Done'
+
+    const now = Date.now()
+    let idleStr = ''
+    if (isRunning) {
+      const mtime = sessionJsonlMtime(s.sessionId, proc!.cwd)
+      const idle = mtime ? Math.floor((now - mtime) / 60_000) : 0
+      idleStr = idle > 0 ? `  ·  idle ${idle}m` : '  ·  active'
+    } else {
+      idleStr = `  ·  ${relTime(s.mtime)}`
+    }
+
+    const buttons: Btn[][] = []
+    if (isRunning) {
+      buttons.push([
+        { text: '📡 Go Live', callback_data: `golive:${short}` },
+        { text: '💬 Chat', callback_data: `chat:${short}` },
+        { text: '📜 Last 5', callback_data: `logs5:${short}` },
+      ])
+      buttons.push([
+        ...(isPaused
+          ? [{ text: '▶ Resume', callback_data: `resume:${short}` }]
+          : [{ text: '⏸ Pause', callback_data: `pause:${short}` }]),
+        { text: '✕ Kill', callback_data: `kill:${short}` },
+        { text: '🔀 Diff', callback_data: `diff:${short}` },
+      ])
+    } else {
+      buttons.push([
+        { text: '💬 Resume Chat', callback_data: `continue:${short}` },
+        { text: '📜 Last 5', callback_data: `logs5:${short}` },
+        { text: '🔀 Diff', callback_data: `diff:${short}` },
+      ])
+    }
+
+    await sendMsg(
+      chatId,
+      `${icon}\n📁 <b>${esc(s.projectDisplayName)}</b>  <code>${esc(short)}</code>${idleStr}\n<i>${esc(truncate(s.firstPrompt, 80))}</i>`,
+      { reply_markup: { inline_keyboard: buttons } },
+    )
+  }
+}
+
 // Check every minute if it's time to send the briefing
 setInterval(() => {
   const now = new Date()
@@ -880,6 +939,7 @@ async function handleStart(chatId: number) {
     ``,
     `<b>Navigation</b>`,
     `/sessions — list recent sessions (with buttons)`,
+    `/recent — last 5 sessions with action buttons`,
     `/live — running sessions with Go Live / Chat / Last 5 buttons`,
     `/stoplive — stop streaming a live session`,
     `/status — pinned control center (auto-updates)`,
@@ -1656,6 +1716,7 @@ async function poll() {
         if (matchCmd('/sessions'))                   { await handleSessions(chatId); continue }
         if (matchCmd('/status'))                     { await handleStatus(chatId); continue }
         if (matchCmd('/idle'))                       { await handleIdle(chatId); continue }
+        if (matchCmd('/recent'))                     { await handleRecent(chatId); continue }
         if (matchCmd('/live'))                       { await handleLive(chatId); continue }
         if (matchCmd('/stoplive'))                   { await handleStopLive(chatId); continue }
         if (matchCmd('/quick') || matchCmd('/q'))    { await handleQuick(chatId); continue }
@@ -1716,6 +1777,7 @@ async function registerCommands() {
       { command: 'safetask',  description: 'Start with default permissions' },
       { command: 'plan',      description: 'Start in plan/read-only mode' },
       { command: 'research',  description: 'Research a topic → get a report file' },
+      { command: 'recent',    description: 'Last 5 sessions with action buttons' },
       { command: 'live',      description: 'Running sessions — Go Live / Chat / Last 5' },
       { command: 'stoplive',  description: 'Stop streaming a live session' },
       { command: 'sessions',  description: 'List recent sessions' },
