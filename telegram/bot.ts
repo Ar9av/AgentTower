@@ -1492,29 +1492,26 @@ async function handleReply(chatId: number, text: string) {
     })
     proc.unref()
     if (!activeStreams.has(activeRunning.sessionId)) {
-      const recent = getRecentSessions(20)
-      const s = recent.find(r => r.sessionId === activeRunning.sessionId)
-      if (s) await startStreaming(chatId, activeRunning.sessionId, s.filepath)
+      const s = resolveSession(activeRunning.sessionId.slice(0, 8))
+      if (s) await startStreaming(chatId, s.sessionId, s.filepath)
     }
     return
   }
 
   // 2. If active session is set but not running → resume it
   if (preferred) {
-    const recent = getRecentSessions(50)
-    const match = recent.find(r => r.sessionId === preferred)
-    if (match) {
-      const cwd = findSessionProjectCwd(match.sessionId) ?? userCwd(chatId)
-      await sendMsg(chatId, `📨 <i>Resuming <b>${esc(path.basename(cwd))}</b> <code>${esc(preferred.slice(0, 8))}</code></i>`, {}, true)
-      const proc = spawn('claude', ['--resume', preferred, '-p', body], {
+    const resolved = resolveSession(preferred.slice(0, 8))
+    if (resolved) {
+      const cwd = findSessionProjectCwd(resolved.sessionId) ?? userCwd(chatId)
+      await sendMsg(chatId, `📨 <i>Resuming <b>${esc(path.basename(cwd))}</b> <code>${esc(resolved.sessionId.slice(0, 8))}</code></i>`, {}, true)
+      const proc = spawn('claude', ['--resume', resolved.sessionId, '-p', body], {
         cwd, detached: true, stdio: 'ignore',
       })
       proc.unref()
-      if (!activeStreams.has(preferred)) {
+      if (!activeStreams.has(resolved.sessionId)) {
         await new Promise(r => setTimeout(r, 1500))
-        const fresh = getRecentSessions(10)
-        const s = fresh.find(r => r.sessionId === preferred) ?? fresh[0]
-        if (s) await startStreaming(chatId, s.sessionId, s.filepath)
+        const fresh = resolveSession(resolved.sessionId.slice(0, 8))
+        if (fresh) await startStreaming(chatId, fresh.sessionId, fresh.filepath)
       }
       return
     }
@@ -1530,9 +1527,8 @@ async function handleReply(chatId: number, text: string) {
     })
     proc.unref()
     if (!activeStreams.has(active.sessionId)) {
-      const recent = getRecentSessions(20)
-      const s = recent.find(r => r.sessionId === active.sessionId)
-      if (s) await startStreaming(chatId, active.sessionId, s.filepath)
+      const s = resolveSession(active.sessionId.slice(0, 8))
+      if (s) await startStreaming(chatId, s.sessionId, s.filepath)
     }
     return
   }
