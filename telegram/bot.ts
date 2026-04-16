@@ -870,6 +870,7 @@ async function handleQuick(chatId: number) {
     ],
     [
       { text: '⏱ Idle', callback_data: 'quick:idle' },
+      { text: '📜 Last 10', callback_data: 'last:' },
       { text: '📁 PWD', callback_data: 'quick:pwd' },
     ],
   ]
@@ -1027,8 +1028,9 @@ async function handleResume(chatId: number, sessionIdPrefix: string) {
 async function handleLogs(chatId: number, prefix: string, nStr: string) {
   const n = Math.min(Math.max(parseInt(nStr, 10) || 5, 1), 20)
   const recent = getRecentSessions(30)
-  const s = recent.find(x => x.sessionId.startsWith(prefix))
-  if (!s) { await sendMsg(chatId, `No session: ${esc(prefix)}`); return }
+  // If no prefix, use the most recent session
+  const s = prefix ? recent.find(x => x.sessionId.startsWith(prefix)) : recent[0]
+  if (!s) { await sendMsg(chatId, prefix ? `No session: ${esc(prefix)}` : 'No sessions found.'); return }
 
   const msgs = parseJsonlFile(s.filepath).filter(m => !m.isMeta).slice(-n)
   if (msgs.length === 0) { await sendMsg(chatId, 'No messages.'); return }
@@ -1064,7 +1066,21 @@ async function handleLogs(chatId: number, prefix: string, nStr: string) {
     const text = blocks.filter(Boolean).join(' ')
     lines.push(`${role} ${esc(truncate(text, 400))}`)
   }
-  await sendMsg(chatId, lines.join('\n'))
+
+  const short = s.sessionId.slice(0, 8)
+  lines.push('')
+  lines.push(`<i>${esc(s.projectDisplayName)} · ${esc(short)}</i>`)
+
+  const buttons: Btn[][] = [[
+    { text: '📜 Last 5', callback_data: `logs5:${short}` },
+    { text: '📜 Last 10', callback_data: `logs10:${short}` },
+    { text: '📜 Last 20', callback_data: `logs20:${short}` },
+  ], [
+    { text: '🔀 Diff', callback_data: `diff:${short}` },
+    { text: '👁 Watch', callback_data: `watch:${short}` },
+  ]]
+
+  await sendMsg(chatId, lines.join('\n'), { reply_markup: { inline_keyboard: buttons } })
 }
 
 async function handleDiff(chatId: number, prefix: string) {
@@ -1228,6 +1244,10 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     case 'resume': await answerCallback(queryId, 'Resuming...'); await handleResume(chatId, id); break
     case 'watch':  await answerCallback(queryId, 'Watching...'); await handleWatch(chatId, id);  break
     case 'logs':   await answerCallback(queryId);               await handleLogs(chatId, id, '5'); break
+    case 'logs5':  await answerCallback(queryId);               await handleLogs(chatId, id, '5'); break
+    case 'logs10': await answerCallback(queryId);               await handleLogs(chatId, id, '10'); break
+    case 'logs20': await answerCallback(queryId);               await handleLogs(chatId, id, '20'); break
+    case 'last':   await answerCallback(queryId);               await handleLogs(chatId, '', '10'); break
     case 'diff':   await answerCallback(queryId, 'Running git diff...'); await handleDiff(chatId, id); break
     case 'quick:live':     await answerCallback(queryId); await handleLive(chatId); break
     case 'quick:sessions': await answerCallback(queryId); await handleSessions(chatId); break
@@ -1371,7 +1391,9 @@ async function poll() {
         if (matchCmd('/resume')) { await handleResume(chatId, args('/resume')); continue }
 
         if (matchCmd('/logs')) {
-          const [id, n = '5'] = args('/logs').split(/\s+/)
+          const parts = args('/logs').split(/\s+/).filter(Boolean)
+          const id = parts[0] ?? ''
+          const n = parts[1] ?? (id ? '5' : '10')
           await handleLogs(chatId, id, n)
           continue
         }
