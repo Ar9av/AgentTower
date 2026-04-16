@@ -587,67 +587,125 @@ setInterval(() => {
 
 // ── /live auto-updating dashboard ──────────────────────────────────────────
 
-const liveDashboards = new Map<number, { msgId: number; timer: ReturnType<typeof setInterval>; noSessionsSince: number }>()
+// Track which sessions are being live-streamed per chat so /stoplive can stop them
+const liveStreamChats = new Map<number, string>()  // chatId → sessionId being streamed
 
-function buildLiveText(): string {
+async function handleLive(chatId: number) {
   const running = scanClaudeSessions(getClaudeDir())
   const entries = Object.entries(running)
   const now = Date.now()
 
-  if (entries.length === 0) return `📡 <b>Live Dashboard</b>\n\nNo running sessions.`
+  if (entries.length === 0) {
+    await sendMsg(chatId, '📡 <b>Running Sessions</b>\n\n✨ No sessions running right now.')
+    return
+  }
 
-  const rows: string[] = [`📡 <b>Live Dashboard</b>  (${entries.length} running)\n`]
+  await sendMsg(chatId, `📡 <b>Running Sessions</b>  (${entries.length})\n\nTap a button to interact:`)
+
   for (const [id, p] of entries) {
+    const short = id.slice(0, 8)
     const pstate = getProcessState(p.pid)
-    const icon = pstate === 'paused' ? '🟡' : '🟢'
+    const icon = pstate === 'paused' ? '🟡 Paused' : '🟢 Running'
     const mtime = sessionJsonlMtime(id, p.cwd)
     const idle = mtime ? Math.floor((now - mtime) / 60_000) : 0
-    const idleStr = idle > 0 ? `idle ${idle}m` : 'active'
     const stale = idle >= 10 ? ' ⚠️' : ''
-    rows.push(`${icon} <b>${esc(path.basename(p.cwd))}</b>  <code>${esc(id.slice(0, 8))}</code>`)
-    rows.push(`   ${idleStr}${stale}  PID:${p.pid}`)
+    const idleStr = idle > 0 ? `idle ${idle}m` : 'active now'
+
+    const buttons: Btn[][] = [
+      [
+        { text: '📡 Go Live', callback_data: `golive:${short}` },
+        { text: '💬 Chat', callback_data: `chat:${short}` },
+        { text: '📜 Last 5', callback_data: `logs5:${short}` },
+      ],
+      [
+        { text: '⏸ Pause', callback_data: `pause:${short}` },
+        { text: '✕ Kill', callback_data: `kill:${short}` },
+        { text: '🔀 Diff', callback_data: `diff:${short}` },
+      ],
+    ]
+
+    await sendMsg(
+      chatId,
+      `${icon}${stale}\n📁 <b>${esc(path.basename(p.cwd))}</b>  <code>${esc(short)}</code>\n${idleStr}  ·  PID:${p.pid}`,
+      { reply_markup: { inline_keyboard: buttons } },
+    )
   }
-  rows.push(`\n<i>Updated ${new Date().toLocaleTimeString('en', { hour12: false })}</i>`)
-  return rows.join('\n')
 }
 
-async function handleLive(chatId: number) {
-  // Stop existing dashboard for this chat
-  const existing = liveDashboards.get(chatId)
-  if (existing) { clearInterval(existing.timer); liveDashboards.delete(chatId) }
+async function handleStopLive(chatId: number) {
+  const streamingId = liveStreamChats.get(chatId)
+  if (!streamingId) {
+    await sendMsg(chatId, 'No active live stream to stop.')
+    return
+  }
+  const stream = activeStreams.get(streamingId)
+  if (stream) stream.done = true
+  liveStreamChats.delete(chatId)
+  await sendMsg(chatId, `⏹ Stopped live stream for <code>${esc(streamingId.slice(0, 8))}</code>`)
+}
 
-  const text = buildLiveText()
-  const msg = await sendMsg(chatId, text)
-  if (!msg) return
+async function handleGoLive(chatId: number, sessionIdPrefix: string) {
+  // Stop any existing live stream for this chat
+  const prev = liveStreamChats.get(chatId)
+  if (prev) {
+    const prevStream = activeStreams.get(prev)
+    if (prevStream) prevStream.done = true
+  }
 
-  let lastText = text
-  const timer = setInterval(async () => {
-    const dash = liveDashboards.get(chatId)
-    if (!dash) return
-    const newText = buildLiveText()
-    const running = scanClaudeSessions(getClaudeDir())
-    const count = Object.keys(running).length
+  const recent = getRecentSessions(50)
+  const session = recent.find(s => s.sessionId.startsWith(sessionIdPrefix))
+  if (!session) {
+    await sendMsg(chatId, `Session not found: <code>${esc(sessionIdPrefix)}</code>`)
+    return
+  }
 
-    if (count === 0) {
-      if (dash.noSessionsSince === 0) dash.noSessionsSince = Date.now()
-      if (Date.now() - dash.noSessionsSince > 5 * 60 * 1000) {
-        // No sessions for 5 min — stop updating
-        clearInterval(dash.timer)
-        liveDashboards.delete(chatId)
-        await editMsg(chatId, dash.msgId, newText + '\n\n<i>Dashboard stopped (no running sessions).</i>')
-        return
-      }
-    } else {
-      dash.noSessionsSince = 0
-    }
+  liveStreamChats.set(chatId, session.sessionId)
+  await sendMsg(chatId, `📡 <b>Live</b> — <b>${esc(session.projectDisplayName)}</b> <code>${esc(sessionIdPrefix)}</code>\n<i>Use /stoplive to stop streaming.</i>`)
+  await startStreaming(chatId, session.sessionId, session.filepath)
+  // Clean up when stream ends naturally
+  liveStreamChats.delete(chatId)
+}
 
-    if (newText !== lastText) {
-      await editMsg(chatId, dash.msgId, newText)
-      lastText = newText
-    }
-  }, 30_000)
+async function handleChat(chatId: number, sessionIdPrefix: string) {
+  // Stop any live stream first
+  const prev = liveStreamChats.get(chatId)
+  if (prev) {
+    const prevStream = activeStreams.get(prev)
+    if (prevStream) prevStream.done = true
+    liveStreamChats.delete(chatId)
+  }
 
-  liveDashboards.set(chatId, { msgId: msg.message_id, timer, noSessionsSince: 0 })
+  const recent = getRecentSessions(50)
+  const session = recent.find(s => s.sessionId.startsWith(sessionIdPrefix))
+  if (!session) {
+    await sendMsg(chatId, `Session not found: <code>${esc(sessionIdPrefix)}</code>`)
+    return
+  }
+
+  // Show last 5 messages as context
+  const msgs = parseJsonlFile(session.filepath).filter(m => !m.isMeta).slice(-5)
+  const lines: string[] = [`💬 <b>${esc(session.projectDisplayName)}</b>  <code>${esc(sessionIdPrefix)}</code>\n`]
+  for (const m of msgs) {
+    const role = m.type === 'user' ? '👤' : '🤖'
+    const text = m.content.filter(b => b.type === 'text').map(b => b.text ?? '').join(' ')
+    const tools = m.content.filter(b => b.type === 'tool_use').map(b => `⚙${b.tool_name ?? ''}`).join(' ')
+    const combined = [text, tools].filter(Boolean).join(' ')
+    if (combined) lines.push(`${role} ${esc(truncate(combined, 200))}`)
+  }
+  lines.push('')
+  lines.push(`<i>Type your message below — it will be sent to this session.</i>`)
+
+  // Set as active session
+  setActiveSessionId(chatId, session.sessionId)
+  updatePinnedStatuses()
+
+  await sendMsg(chatId, lines.join('\n'), {
+    reply_markup: { inline_keyboard: [[
+      { text: '📡 Go Live', callback_data: `golive:${sessionIdPrefix}` },
+      { text: '📜 Last 10', callback_data: `logs10:${sessionIdPrefix}` },
+      { text: '⏹ Stop', callback_data: `kill:${sessionIdPrefix}` },
+    ]] },
+  })
 }
 
 // ── Pinned control center ─────────────────────────────────────────────────
@@ -822,8 +880,9 @@ async function handleStart(chatId: number) {
     ``,
     `<b>Navigation</b>`,
     `/sessions — list recent sessions (with buttons)`,
-    `/live — auto-updating live dashboard`,
-    `/status — running sessions (pins a control center)`,
+    `/live — running sessions with Go Live / Chat / Last 5 buttons`,
+    `/stoplive — stop streaming a live session`,
+    `/status — pinned control center (auto-updates)`,
     `/idle — running sessions sorted by idle time`,
     `/logs &lt;id&gt; [n] — last n messages from a session`,
     `/diff &lt;id&gt; — git diff in the session's cwd`,
@@ -1442,6 +1501,8 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     case 'pause':  await answerCallback(queryId, 'Pausing...'); await handlePause(chatId, id);  break
     case 'resume': await answerCallback(queryId, 'Resuming...'); await handleResume(chatId, id); break
     case 'watch':  await answerCallback(queryId, 'Watching...'); await handleWatch(chatId, id);  break
+    case 'golive': await answerCallback(queryId, 'Going live...'); await handleGoLive(chatId, id); break
+    case 'chat':   await answerCallback(queryId, 'Loading...');    await handleChat(chatId, id);   break
     case 'logs':   await answerCallback(queryId);               await handleLogs(chatId, id, '5'); break
     case 'logs5':  await answerCallback(queryId);               await handleLogs(chatId, id, '5'); break
     case 'logs10': await answerCallback(queryId);               await handleLogs(chatId, id, '10'); break
@@ -1596,6 +1657,7 @@ async function poll() {
         if (matchCmd('/status'))                     { await handleStatus(chatId); continue }
         if (matchCmd('/idle'))                       { await handleIdle(chatId); continue }
         if (matchCmd('/live'))                       { await handleLive(chatId); continue }
+        if (matchCmd('/stoplive'))                   { await handleStopLive(chatId); continue }
         if (matchCmd('/quick') || matchCmd('/q'))    { await handleQuick(chatId); continue }
         if (matchCmd('/briefing'))                   { await handleBriefingConfig(chatId, args('/briefing')); continue }
         if (matchCmd('/whoami'))                     { await handleWhoami(chatId); continue }
@@ -1654,7 +1716,8 @@ async function registerCommands() {
       { command: 'safetask',  description: 'Start with default permissions' },
       { command: 'plan',      description: 'Start in plan/read-only mode' },
       { command: 'research',  description: 'Research a topic → get a report file' },
-      { command: 'live',      description: 'Auto-updating live dashboard' },
+      { command: 'live',      description: 'Running sessions — Go Live / Chat / Last 5' },
+      { command: 'stoplive',  description: 'Stop streaming a live session' },
       { command: 'sessions',  description: 'List recent sessions' },
       { command: 'status',    description: 'Pinned control center' },
       { command: 'idle',      description: 'Sessions sorted by idle time' },
