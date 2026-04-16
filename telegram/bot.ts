@@ -916,6 +916,9 @@ async function handleRecent(chatId: number) {
     } else {
       buttons.push([
         { text: '💬 Resume Chat', callback_data: `continue:${short}` },
+        { text: '🆕 New Session', callback_data: `newsession:${short}` },
+      ])
+      buttons.push([
         { text: '📜 Last 5', callback_data: `logs5:${short}` },
         { text: '🔀 Diff', callback_data: `diff:${short}` },
       ])
@@ -1474,6 +1477,12 @@ async function handleWhoami(chatId: number) {
 
 // Plain text reply — inject into active session
 async function handleReply(chatId: number, text: string) {
+  // Safety: never send /commands to Claude
+  if (text.startsWith('/')) {
+    await sendMsg(chatId, `Unknown command: <code>${esc(text.split(/\s/)[0])}</code>`)
+    return
+  }
+
   const running = scanClaudeSessions(getClaudeDir())
   const allRunning = Object.values(running).filter(p => getProcessState(p.pid) === 'running')
 
@@ -1659,7 +1668,7 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     }
     case 'diff':   await answerCallback(queryId, 'Running git diff...'); await handleDiff(chatId, id); break
     case 'continue': {
-      await answerCallback(queryId, 'Loading…')
+      await answerCallback(queryId, 'Resuming…')
       const found = resolveSession(id)
       if (!found) { await sendMsg(chatId, `Session not found: <code>${esc(id)}</code>.\nTry /recent to see available sessions.`); break }
       const cwd = findSessionProjectCwd(found.sessionId) ?? userCwd(chatId)
@@ -1674,14 +1683,31 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
         const combined = [text, tools].filter(Boolean).join(' ')
         if (combined) lines.push(`${role} ${esc(truncate(combined, 200))}`)
       }
-      lines.push('')
-      lines.push(`<i>Reply below to continue this session.</i>`)
+      await sendMsg(chatId, lines.join('\n'), {}, true)
 
-      // Set this as the active session so handleReply targets it
+      // Set active, ping "hi" to resume, start streaming
       setActiveSessionId(chatId, found.sessionId)
       updatePinnedStatuses()
 
-      await sendMsg(chatId, lines.join('\n'), sessionKeyboard(found.sessionId, false, false))
+      await sendMsg(chatId, `📨 <i>Resuming <b>${esc(path.basename(cwd))}</b>…</i>`, {}, true)
+      const proc = spawn('claude', ['--resume', found.sessionId, '-p', 'hi'], {
+        cwd, detached: true, stdio: 'ignore',
+      })
+      proc.unref()
+      await new Promise(r => setTimeout(r, 1500))
+      const fresh = resolveSession(found.sessionId.slice(0, 8))
+      if (fresh) await startStreaming(chatId, fresh.sessionId, fresh.filepath)
+      break
+    }
+    case 'newsession': {
+      await answerCallback(queryId, 'Starting…')
+      // Resolve the project path from any session in this project
+      const ref = resolveSession(id)
+      if (!ref) { await sendMsg(chatId, `Session not found: <code>${esc(id)}</code>`); break }
+      const projectPath = findSessionProjectCwd(ref.sessionId) ?? userCwd(chatId)
+
+      await sendMsg(chatId, `🆕 <i>New session in <b>${esc(path.basename(projectPath))}</b></i>`, {}, true)
+      await spawnTask(chatId, projectPath, 'hi', 'skip')
       break
     }
     default:
