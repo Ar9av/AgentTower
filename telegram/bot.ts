@@ -962,6 +962,7 @@ async function handleStart(chatId: number) {
     `/kill /pause /resume /watch &lt;id&gt;`,
     ``,
     `<b>Settings</b>`,
+    `/clear — clear active session (plain text → brain)`,
     `/cd &lt;path&gt; — set default project dir`,
     `/pwd — show your default dir`,
     `/whoami — show your chat id`,
@@ -1067,6 +1068,20 @@ async function handleQuick(chatId: number) {
     `⚡ <b>Quick Actions</b>${count > 0 ? `\n\n🟢 ${count} running` : '\n\n✨ No running sessions'}`,
     { reply_markup: { inline_keyboard: rows } },
   )
+}
+
+async function handleClearSession(chatId: number) {
+  const prev = getActiveSessionId(chatId)
+  if (!prev) {
+    await sendMsg(chatId, '💬 No active session set. Plain text goes to ~/brain.')
+    return
+  }
+  const recent = getRecentSessions(50)
+  const match = recent.find(r => r.sessionId === prev)
+  const name = match?.projectDisplayName ?? prev.slice(0, 8)
+  setActiveSessionId(chatId, null)
+  updatePinnedStatuses()
+  await sendMsg(chatId, `✅ Cleared active session (<b>${esc(name)}</b>).\nPlain text now goes to ~/brain.`)
 }
 
 async function handleBriefingConfig(chatId: number, arg: string) {
@@ -1769,6 +1784,7 @@ async function poll() {
         if (matchCmd('/recent'))                     { await handleRecent(chatId); continue }
         if (matchCmd('/live'))                       { await handleLive(chatId); continue }
         if (matchCmd('/stoplive'))                   { await handleStopLive(chatId); continue }
+        if (matchCmd('/clear'))                      { await handleClearSession(chatId); continue }
         if (matchCmd('/quick') || matchCmd('/q'))    { await handleQuick(chatId); continue }
         if (matchCmd('/briefing'))                   { await handleBriefingConfig(chatId, args('/briefing')); continue }
         if (matchCmd('/whoami'))                     { await handleWhoami(chatId); continue }
@@ -1833,6 +1849,7 @@ async function registerCommands() {
       { command: 'sessions',  description: 'List recent sessions' },
       { command: 'status',    description: 'Pinned control center' },
       { command: 'idle',      description: 'Sessions sorted by idle time' },
+      { command: 'clear',     description: 'Clear active session (→ brain)' },
       { command: 'briefing',  description: 'Configure daily briefing' },
       { command: 'cd',        description: 'Set default project directory' },
       { command: 'pwd',       description: 'Show current default directory' },
