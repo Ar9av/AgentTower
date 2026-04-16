@@ -51,6 +51,9 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true })
 
 interface PersistedState {
   userDefaults: Record<string, { cwd?: string }>   // chatId → prefs
+  pinnedStatus?: Record<string, number>             // chatId → message_id
+  briefingHour?: number                             // 0-23 UTC (default 9)
+  lastBriefingDate?: string                         // YYYY-MM-DD of last sent
 }
 
 function loadState(): PersistedState {
@@ -281,6 +284,77 @@ function attachmentPreamble(files: string[]): string {
   return `Attached files (paths on this machine, you may Read them):\n${list}\n\n`
 }
 
+// ── Smart completion summary ───────────────────────────────────────────────
+
+function sessionJsonlPath(sessionId: string): string | null {
+  const projectsDir = path.join(getClaudeDir(), 'projects')
+  try {
+    for (const d of fs.readdirSync(projectsDir)) {
+      const f = path.join(projectsDir, d, `${sessionId}.jsonl`)
+      if (fs.existsSync(f)) return f
+    }
+  } catch {}
+  return null
+}
+
+async function buildCompletionSummary(sessionId: string, cwd: string): Promise<string> {
+  const lines: string[] = []
+  const short = sessionId.slice(0, 8)
+  const projectName = path.basename(cwd)
+
+  lines.push(`✅ <b>Session complete</b>`)
+  lines.push(`📁 <code>${esc(projectName)}</code>  <code>${esc(short)}</code>`)
+
+  // Duration: use JSONL file create vs mtime
+  const fp = sessionJsonlPath(sessionId)
+  if (fp) {
+    try {
+      const stat = fs.statSync(fp)
+      const durationMs = stat.mtimeMs - stat.birthtimeMs
+      if (durationMs > 0) {
+        const mins = Math.round(durationMs / 60_000)
+        lines.push(`⏱ ${mins < 1 ? '<1' : mins}m`)
+      }
+    } catch {}
+  }
+
+  // Last action from JSONL
+  if (fp) {
+    try {
+      const raw = fs.readFileSync(fp, 'utf-8')
+      const jsonLines = raw.split('\n').filter(Boolean)
+      const lastTools: string[] = []
+      // Scan last 30 lines for tool_use blocks
+      for (const line of jsonLines.slice(-30)) {
+        try {
+          const obj = JSON.parse(line)
+          if (obj.type !== 'assistant') continue
+          const message = obj.message ?? obj
+          const content = message.content ?? []
+          for (const b of content) {
+            if (b.type === 'tool_use' && b.name) lastTools.push(b.name)
+          }
+        } catch {}
+      }
+      if (lastTools.length > 0) {
+        const last = lastTools[lastTools.length - 1]
+        lines.push(`🔧 Last: <code>${esc(last)}</code>`)
+      }
+    } catch {}
+  }
+
+  // Git diff stat
+  try {
+    const { stdout } = await execFileP('git', ['diff', '--stat', '--no-color', 'HEAD'], { cwd, timeout: 5000, maxBuffer: 500_000 })
+    const statLine = stdout.trim().split('\n').pop()?.trim()
+    if (statLine && statLine.includes('changed')) {
+      lines.push(`📊 ${esc(statLine)}`)
+    }
+  } catch {}
+
+  return lines.join('\n')
+}
+
 // ── Session streaming ──────────────────────────────────────────────────────
 
 interface StreamState {
@@ -404,11 +478,10 @@ async function pollStream(s: StreamState) {
   const status = proc ? getProcessState(proc.pid) : 'dead'
 
   if (status === 'dead') {
-    await sendMsg(
-      s.chatId,
-      `✅ <b>Session complete</b>\n\nReply to continue, or /sessions to see all.`,
-      sessionKeyboard(s.sessionId, false, false),
-    )
+    const cwd = findSessionProjectCwd(s.sessionId) ?? ''
+    const summary = cwd ? await buildCompletionSummary(s.sessionId, cwd) : `✅ <b>Session complete</b>`
+    await sendMsg(s.chatId, summary, sessionKeyboard(s.sessionId, false, false))
+    updatePinnedStatuses()
   } else {
     await sendMsg(
       s.chatId,
@@ -440,11 +513,10 @@ setInterval(() => {
     if (running[id]) continue
     seenRunning.delete(id)
     if (activeStreams.has(id)) continue // already reported via stream
-    const short = id.slice(0, 8)
-    notifyChats(
-      `🔔 <b>Session finished</b> <code>${esc(short)}</code>\n<i>${esc(path.basename(info.cwd))}</i>`,
-      sessionKeyboard(id, false, false),
-    )
+    buildCompletionSummary(id, info.cwd).then(summary => {
+      notifyChats(summary, sessionKeyboard(id, false, false))
+      updatePinnedStatuses()
+    })
   }
 }, 5_000)
 
@@ -497,6 +569,200 @@ setInterval(() => {
   }
 }, STALE_CHECK_MS)
 
+// ── /live auto-updating dashboard ──────────────────────────────────────────
+
+const liveDashboards = new Map<number, { msgId: number; timer: ReturnType<typeof setInterval>; noSessionsSince: number }>()
+
+function buildLiveText(): string {
+  const running = scanClaudeSessions(getClaudeDir())
+  const entries = Object.entries(running)
+  const now = Date.now()
+
+  if (entries.length === 0) return `📡 <b>Live Dashboard</b>\n\nNo running sessions.`
+
+  const rows: string[] = [`📡 <b>Live Dashboard</b>  (${entries.length} running)\n`]
+  for (const [id, p] of entries) {
+    const pstate = getProcessState(p.pid)
+    const icon = pstate === 'paused' ? '🟡' : '🟢'
+    const mtime = sessionJsonlMtime(id, p.cwd)
+    const idle = mtime ? Math.floor((now - mtime) / 60_000) : 0
+    const idleStr = idle > 0 ? `idle ${idle}m` : 'active'
+    const stale = idle >= 10 ? ' ⚠️' : ''
+    rows.push(`${icon} <b>${esc(path.basename(p.cwd))}</b>  <code>${esc(id.slice(0, 8))}</code>`)
+    rows.push(`   ${idleStr}${stale}  PID:${p.pid}`)
+  }
+  rows.push(`\n<i>Updated ${new Date().toLocaleTimeString('en', { hour12: false })}</i>`)
+  return rows.join('\n')
+}
+
+async function handleLive(chatId: number) {
+  // Stop existing dashboard for this chat
+  const existing = liveDashboards.get(chatId)
+  if (existing) { clearInterval(existing.timer); liveDashboards.delete(chatId) }
+
+  const text = buildLiveText()
+  const msg = await sendMsg(chatId, text)
+  if (!msg) return
+
+  let lastText = text
+  const timer = setInterval(async () => {
+    const dash = liveDashboards.get(chatId)
+    if (!dash) return
+    const newText = buildLiveText()
+    const running = scanClaudeSessions(getClaudeDir())
+    const count = Object.keys(running).length
+
+    if (count === 0) {
+      if (dash.noSessionsSince === 0) dash.noSessionsSince = Date.now()
+      if (Date.now() - dash.noSessionsSince > 5 * 60 * 1000) {
+        // No sessions for 5 min — stop updating
+        clearInterval(dash.timer)
+        liveDashboards.delete(chatId)
+        await editMsg(chatId, dash.msgId, newText + '\n\n<i>Dashboard stopped (no running sessions).</i>')
+        return
+      }
+    } else {
+      dash.noSessionsSince = 0
+    }
+
+    if (newText !== lastText) {
+      await editMsg(chatId, dash.msgId, newText)
+      lastText = newText
+    }
+  }, 30_000)
+
+  liveDashboards.set(chatId, { msgId: msg.message_id, timer, noSessionsSince: 0 })
+}
+
+// ── Pinned control center ─────────────────────────────────────────────────
+
+function buildStatusText(): string {
+  const running = scanClaudeSessions(getClaudeDir())
+  const entries = Object.entries(running)
+  const now = Date.now()
+
+  if (entries.length === 0) return `🗼 <b>Control Center</b>\n\n✨ All clear — no running sessions.\n\n<i>${new Date().toLocaleTimeString('en', { hour12: false })}</i>`
+
+  const rows: string[] = [`🗼 <b>Control Center</b>  (${entries.length} active)\n`]
+  for (const [id, p] of entries) {
+    const pstate = getProcessState(p.pid)
+    const icon = pstate === 'paused' ? '🟡 Paused' : '🟢 Running'
+    const mtime = sessionJsonlMtime(id, p.cwd)
+    const idle = mtime ? Math.floor((now - mtime) / 60_000) : 0
+    const stale = idle >= 10 ? ' ⚠️' : ''
+    rows.push(`${icon}${stale}`)
+    rows.push(`📁 <b>${esc(path.basename(p.cwd))}</b>  <code>${esc(id.slice(0, 8))}</code>`)
+    if (idle > 0) rows.push(`⏱ idle ${idle}m`)
+    rows.push('')
+  }
+  rows.push(`<i>Updated ${new Date().toLocaleTimeString('en', { hour12: false })}</i>`)
+  return rows.join('\n')
+}
+
+async function handlePinnedStatus(chatId: number) {
+  const text = buildStatusText()
+  const msg = await sendMsg(chatId, text)
+  if (!msg) return
+
+  // Pin the message
+  await tg('pinChatMessage', { chat_id: chatId, message_id: msg.message_id, disable_notification: true })
+
+  // Persist
+  state.pinnedStatus ??= {}
+  state.pinnedStatus[String(chatId)] = msg.message_id
+  saveState(state)
+}
+
+function updatePinnedStatuses() {
+  if (!state.pinnedStatus) return
+  const text = buildStatusText()
+  for (const [chatIdStr, msgId] of Object.entries(state.pinnedStatus)) {
+    const chatId = parseInt(chatIdStr, 10)
+    editMsg(chatId, msgId, text).catch(() => {
+      // Message may have been deleted
+      delete state.pinnedStatus![chatIdStr]
+      saveState(state)
+    })
+  }
+}
+
+// Update pinned statuses every 30s
+setInterval(updatePinnedStatuses, 30_000)
+
+// ── Daily morning briefing ────────────────────────────────────────────────
+
+function getBriefingHour(): number {
+  return state.briefingHour ?? 9  // default 9 UTC
+}
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+async function sendBriefing() {
+  const recent = getRecentSessions(50)
+  const running = scanClaudeSessions(getClaudeDir())
+  const now = Date.now()
+  const dayMs = 24 * 60 * 60 * 1000
+
+  const completedToday = recent.filter(s => !s.isActive && now - s.mtime < dayMs)
+  const activeNow = Object.entries(running)
+
+  const lines: string[] = [`☀️ <b>Daily Briefing</b>\n`]
+
+  // Running sessions
+  if (activeNow.length > 0) {
+    lines.push(`🟢 <b>${activeNow.length} running</b>`)
+    for (const [id, p] of activeNow) {
+      const mtime = sessionJsonlMtime(id, p.cwd)
+      const idle = mtime ? Math.floor((now - mtime) / 60_000) : 0
+      const stale = idle >= 10 ? ' ⚠️ idle' : ''
+      lines.push(`  • <b>${esc(path.basename(p.cwd))}</b> <code>${esc(id.slice(0, 8))}</code>${stale}`)
+    }
+    lines.push('')
+  } else {
+    lines.push(`✨ No running sessions.\n`)
+  }
+
+  // Completed in last 24h
+  if (completedToday.length > 0) {
+    lines.push(`✅ <b>${completedToday.length} completed</b> in last 24h`)
+    for (const s of completedToday.slice(0, 10)) {
+      lines.push(`  • ${esc(s.projectDisplayName)} — ${esc(truncate(s.firstPrompt, 60))}`)
+    }
+    if (completedToday.length > 10) lines.push(`  <i>…and ${completedToday.length - 10} more</i>`)
+    lines.push('')
+  } else {
+    lines.push(`No sessions completed in the last 24h.\n`)
+  }
+
+  // Stale warnings
+  const staleList = activeNow.filter(([id, p]) => {
+    const mtime = sessionJsonlMtime(id, p.cwd)
+    return mtime ? (now - mtime >= STALE_THRESHOLD_MS) : false
+  })
+  if (staleList.length > 0) {
+    lines.push(`⚠️ <b>${staleList.length} stale</b> (idle >10m) — may need attention`)
+  }
+
+  lines.push(`\n/live — auto-updating dashboard`)
+  lines.push(`/sessions — full session list`)
+
+  const text = lines.join('\n')
+  notifyChats(text)
+
+  state.lastBriefingDate = todayStr()
+  saveState(state)
+}
+
+// Check every minute if it's time to send the briefing
+setInterval(() => {
+  const now = new Date()
+  if (now.getUTCHours() !== getBriefingHour()) return
+  if (state.lastBriefingDate === todayStr()) return
+  sendBriefing()
+}, 60_000)
+
 // ── Command handlers ───────────────────────────────────────────────────────
 
 async function handleStart(chatId: number) {
@@ -512,7 +778,8 @@ async function handleStart(chatId: number) {
     ``,
     `<b>Navigation</b>`,
     `/sessions — list recent sessions (with buttons)`,
-    `/status — running sessions`,
+    `/live — auto-updating live dashboard`,
+    `/status — running sessions (pins a control center)`,
     `/idle — running sessions sorted by idle time`,
     `/logs &lt;id&gt; [n] — last n messages from a session`,
     `/diff &lt;id&gt; — git diff in the session's cwd`,
@@ -524,6 +791,7 @@ async function handleStart(chatId: number) {
     `/cd &lt;path&gt; — set default project dir`,
     `/pwd — show your default dir`,
     `/whoami — show your chat id`,
+    `/briefing [hour] — set daily briefing time (UTC)`,
     ``,
     `<b>Extras</b>`,
     `Upload a file (doc / photo / voice) — next message uses it as context.`,
@@ -586,21 +854,22 @@ async function handleIdle(chatId: number) {
 }
 
 async function handleStatus(chatId: number) {
-  const running = scanClaudeSessions(getClaudeDir())
-  const procs = Object.values(running)
-  if (procs.length === 0) {
-    await sendMsg(chatId, 'No active Claude processes.')
+  await handlePinnedStatus(chatId)
+}
+
+async function handleBriefingConfig(chatId: number, arg: string) {
+  const h = parseInt(arg.trim(), 10)
+  if (arg.trim() === '') {
+    await sendMsg(chatId, `Daily briefing at <b>${getBriefingHour()}:00 UTC</b>.\nUse <code>/briefing 9</code> to change.`)
     return
   }
-  for (const p of procs) {
-    const pstate = getProcessState(p.pid)
-    const icon = pstate === 'running' ? '🟢' : pstate === 'paused' ? '🟡' : '⚫'
-    await sendMsg(
-      chatId,
-      `${icon} PID:${p.pid}\n<i>${esc(path.basename(p.cwd))}</i>`,
-      sessionKeyboard(p.sessionId, true, pstate === 'paused'),
-    )
+  if (isNaN(h) || h < 0 || h > 23) {
+    await sendMsg(chatId, 'Hour must be 0–23 (UTC).')
+    return
   }
+  state.briefingHour = h
+  saveState(state)
+  await sendMsg(chatId, `✅ Daily briefing set to <b>${h}:00 UTC</b>`)
 }
 
 type TaskMode = 'default' | 'skip' | 'plan'
@@ -639,6 +908,7 @@ async function spawnTask(
     await sendMsg(chatId, 'Session started but session file not found yet. Try /sessions.')
     return
   }
+  updatePinnedStatuses()
   await startStreaming(chatId, newest.sessionId, newest.filepath)
 }
 
@@ -1041,6 +1311,8 @@ async function poll() {
         if (matchCmd('/sessions'))                   { await handleSessions(chatId); continue }
         if (matchCmd('/status'))                     { await handleStatus(chatId); continue }
         if (matchCmd('/idle'))                       { await handleIdle(chatId); continue }
+        if (matchCmd('/live'))                       { await handleLive(chatId); continue }
+        if (matchCmd('/briefing'))                   { await handleBriefingConfig(chatId, args('/briefing')); continue }
         if (matchCmd('/whoami'))                     { await handleWhoami(chatId); continue }
         if (matchCmd('/pwd'))                        { await handlePwd(chatId); continue }
         if (matchCmd('/cd'))                         { await handleCd(chatId, args('/cd')); continue }
