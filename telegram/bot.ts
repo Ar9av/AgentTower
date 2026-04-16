@@ -1611,8 +1611,6 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
   const id = colonIdx >= 0 ? data.slice(colonIdx + 1) : ''
   audit(chatId, user, `cb:${action}`, { sessionIdPrefix: id })
 
-  console.log(`[CB] data=${data} action=${action} id=${id} chatId=${chatId}`)
-
   // Quick-action shortcuts (id = sub-action)
   if (action === 'quick') {
     await answerCallback(queryId)
@@ -1663,7 +1661,6 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     case 'continue': {
       await answerCallback(queryId, 'Loading…')
       const found = resolveSession(id)
-      console.log(`[CB:continue] id=${id} found=${found ? found.sessionId.slice(0,8) : 'NULL'}`)
       if (!found) { await sendMsg(chatId, `Session not found: <code>${esc(id)}</code>.\nTry /recent to see available sessions.`); break }
       const cwd = findSessionProjectCwd(found.sessionId) ?? userCwd(chatId)
 
@@ -1829,7 +1826,6 @@ async function poll() {
         if (matchCmd('/diff')) { await handleDiff(chatId, args('/diff')); continue }
 
         // Plain text — inject into active session
-        console.log(`[REPLY] text="${text.slice(0,50)}" active=${getActiveSessionId(chatId)?.slice(0,8) ?? 'none'}`)
         await handleReply(chatId, text)
       }
     } catch (err) {
