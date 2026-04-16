@@ -329,7 +329,7 @@ async function buildCompletionSummary(sessionId: string, cwd: string): Promise<s
       const durationMs = stat.mtimeMs - stat.birthtimeMs
       if (durationMs > 0) {
         const mins = Math.round(durationMs / 60_000)
-        lines.push(`⏱ ${mins < 1 ? '<1' : mins}m`)
+        lines.push(`⏱ ${mins < 1 ? '&lt;1' : mins}m`)
       }
     } catch {}
   }
