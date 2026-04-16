@@ -144,6 +144,7 @@ async function sendMsg(
   chatId: number,
   text: string,
   extra: Record<string, unknown> = {},
+  silent = false,
 ): Promise<TgMessage | null> {
   // Split long messages, keep reply_markup only on the last chunk
   const chunks = chunkText(text, MAX_MSG_LEN)
@@ -154,6 +155,7 @@ async function sendMsg(
       chat_id: chatId,
       text: chunks[i],
       parse_mode: 'HTML',
+      ...(silent ? { disable_notification: true } : {}),
       ...(isLast ? extra : {}),
     })
   }
@@ -464,7 +466,7 @@ async function pollStream(s: StreamState) {
 
         // If the assembled text would blow the edit limit, start a fresh message
         if (text.length > MAX_MSG_LEN) {
-          const fresh = await sendMsg(s.chatId, text)
+          const fresh = await sendMsg(s.chatId, text, {}, true)
           if (fresh) s.msgId = fresh.message_id
         } else {
           await editMsg(s.chatId, s.msgId, text)
@@ -475,8 +477,8 @@ async function pollStream(s: StreamState) {
       } else if (msg.type === 'user' && !msg.isMeta) {
         await sendMsg(s.chatId, `📨 ${esc(truncate(
           msg.content.find(b => b.type === 'text')?.text ?? '', 100
-        ))}`)
-        const next = await sendMsg(s.chatId, '⏳ Claude is thinking...')
+        ))}`, {}, true)
+        const next = await sendMsg(s.chatId, '⏳ Claude is thinking...', {}, true)
         if (next) s.msgId = next.message_id
         s.lastEdit = 0
       }
@@ -1281,8 +1283,24 @@ async function transcribeVoice(filepath: string): Promise<string | null> {
 // ── Callback query handling ────────────────────────────────────────────────
 
 async function handleCallback(chatId: number, queryId: string, data: string, user: string) {
-  const [action, id] = data.split(':')
+  // Split on first ':' only — actions like 'quick:live' need full prefix as action
+  const colonIdx = data.indexOf(':')
+  const action = colonIdx >= 0 ? data.slice(0, colonIdx) : data
+  const id = colonIdx >= 0 ? data.slice(colonIdx + 1) : ''
   audit(chatId, user, `cb:${action}`, { sessionIdPrefix: id })
+
+  // Quick-action shortcuts (id = sub-action)
+  if (action === 'quick') {
+    await answerCallback(queryId)
+    switch (id) {
+      case 'live':     await handleLive(chatId); break
+      case 'sessions': await handleSessions(chatId); break
+      case 'status':   await handleStatus(chatId); break
+      case 'idle':     await handleIdle(chatId); break
+      case 'pwd':      await handlePwd(chatId); break
+    }
+    return
+  }
 
   switch (action) {
     case 'kill':   await answerCallback(queryId, 'Killing...'); await handleKill(chatId, id);   break
@@ -1295,31 +1313,41 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     case 'logs20': await answerCallback(queryId);               await handleLogs(chatId, id, '20'); break
     case 'last':   await answerCallback(queryId);               await handleLogs(chatId, '', '10'); break
     case 'switch': {
-      // Switch active chat session
-      const recent = getRecentSessions(30)
+      const recent = getRecentSessions(50)
       const match = recent.find(r => r.sessionId.startsWith(id))
       if (!match) { await answerCallback(queryId, 'Session not found'); break }
-      const running = scanClaudeSessions(getClaudeDir())
-      if (!running[match.sessionId]) { await answerCallback(queryId, 'Session not running'); break }
+      const procs = scanClaudeSessions(getClaudeDir())
+      if (!procs[match.sessionId]) { await answerCallback(queryId, 'Session not running'); break }
       setActiveSessionId(chatId, match.sessionId)
       await answerCallback(queryId, `Switched to ${path.basename(findSessionProjectCwd(match.sessionId) ?? '')}`)
       updatePinnedStatuses()
       break
     }
     case 'diff':   await answerCallback(queryId, 'Running git diff...'); await handleDiff(chatId, id); break
-    case 'quick:live':     await answerCallback(queryId); await handleLive(chatId); break
-    case 'quick:sessions': await answerCallback(queryId); await handleSessions(chatId); break
-    case 'quick:status':   await answerCallback(queryId); await handleStatus(chatId); break
-    case 'quick:idle':     await answerCallback(queryId); await handleIdle(chatId); break
-    case 'quick:pwd':      await answerCallback(queryId); await handlePwd(chatId); break
     case 'continue': {
-      await answerCallback(queryId, 'Continuing...')
-      const recent = getRecentSessions(30).find(r => r.sessionId.startsWith(id))
-      if (!recent) { await sendMsg(chatId, `No session: ${esc(id)}`); return }
+      await answerCallback(queryId, 'Loading…')
+      const recent = getRecentSessions(50).find(r => r.sessionId.startsWith(id))
+      if (!recent) { await sendMsg(chatId, `Session not found: <code>${esc(id)}</code>.\nTry /sessions to see available sessions.`); break }
       const cwd = findSessionProjectCwd(recent.sessionId) ?? userCwd(chatId)
-      await sendMsg(chatId, `🔁 <b>Reply</b> below to continue <code>${esc(id)}</code> in <code>${esc(path.basename(cwd))}</code>`)
-      // Spawn a watcher; user's next plain message will be injected by handleReply
-      await startStreaming(chatId, recent.sessionId, recent.filepath, { silent: true })
+
+      // Show last 5 messages as context
+      const msgs = parseJsonlFile(recent.filepath).filter(m => !m.isMeta).slice(-5)
+      const lines: string[] = [`💬 <b>${esc(path.basename(cwd))}</b>  <code>${esc(id)}</code>\n`]
+      for (const m of msgs) {
+        const role = m.type === 'user' ? '👤' : '🤖'
+        const text = m.content.filter(b => b.type === 'text').map(b => b.text ?? '').join(' ')
+        const tools = m.content.filter(b => b.type === 'tool_use').map(b => `⚙${b.tool_name ?? ''}`).join(' ')
+        const combined = [text, tools].filter(Boolean).join(' ')
+        if (combined) lines.push(`${role} ${esc(truncate(combined, 200))}`)
+      }
+      lines.push('')
+      lines.push(`<i>Reply below to continue this session.</i>`)
+
+      // Set this as the active session so handleReply targets it
+      setActiveSessionId(chatId, recent.sessionId)
+      updatePinnedStatuses()
+
+      await sendMsg(chatId, lines.join('\n'), sessionKeyboard(recent.sessionId, false, false))
       break
     }
     default:
