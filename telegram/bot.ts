@@ -265,9 +265,14 @@ function sessionKeyboard(sessionId: string, running: boolean, paused: boolean) {
     ])
   } else {
     rows.push([
-      { text: '🔁 Resume chat', callback_data: `continue:${short}` },
-      { text: '👁 Replay',      callback_data: `watch:${short}` },
+      { text: '💬 Resume Chat', callback_data: `continue:${short}` },
+      { text: '📜 Last 10', callback_data: `logs10:${short}` },
     ])
+    rows.push([
+      { text: '📜 Last Instruction', callback_data: `lastuser:${short}` },
+      { text: '🔀 Diff', callback_data: `diff:${short}` },
+    ])
+    return { reply_markup: { inline_keyboard: rows } }
   }
   rows.push([
     { text: '📜 Logs', callback_data: `logs:${short}` },
@@ -334,31 +339,6 @@ async function buildCompletionSummary(sessionId: string, cwd: string): Promise<s
     } catch {}
   }
 
-  // Last action from JSONL
-  if (fp) {
-    try {
-      const raw = fs.readFileSync(fp, 'utf-8')
-      const jsonLines = raw.split('\n').filter(Boolean)
-      const lastTools: string[] = []
-      // Scan last 30 lines for tool_use blocks
-      for (const line of jsonLines.slice(-30)) {
-        try {
-          const obj = JSON.parse(line)
-          if (obj.type !== 'assistant') continue
-          const message = obj.message ?? obj
-          const content = message.content ?? []
-          for (const b of content) {
-            if (b.type === 'tool_use' && b.name) lastTools.push(b.name)
-          }
-        } catch {}
-      }
-      if (lastTools.length > 0) {
-        const last = lastTools[lastTools.length - 1]
-        lines.push(`🔧 Last: <code>${esc(last)}</code>`)
-      }
-    } catch {}
-  }
-
   // Git diff stat
   try {
     const { stdout } = await execFileP('git', ['diff', '--stat', '--no-color', 'HEAD'], { cwd, timeout: 5000, maxBuffer: 500_000 })
@@ -367,6 +347,22 @@ async function buildCompletionSummary(sessionId: string, cwd: string): Promise<s
       lines.push(`📊 ${esc(statLine)}`)
     }
   } catch {}
+
+  // Claude's last message
+  if (fp) {
+    try {
+      const msgs = parseJsonlFile(fp).filter(m => !m.isMeta && m.type === 'assistant')
+      const last = msgs[msgs.length - 1]
+      if (last) {
+        const textParts = last.content.filter(b => b.type === 'text').map(b => b.text ?? '')
+        const text = textParts.join(' ').trim()
+        if (text) {
+          lines.push('')
+          lines.push(`🤖 ${esc(truncate(text, 350))}`)
+        }
+      }
+    } catch {}
+  }
 
   return lines.join('\n')
 }
@@ -1633,6 +1629,18 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     case 'logs10': await answerCallback(queryId);               await handleLogs(chatId, id, '10'); break
     case 'logs20': await answerCallback(queryId);               await handleLogs(chatId, id, '20'); break
     case 'last':   await answerCallback(queryId);               await handleLogs(chatId, '', '10'); break
+    case 'lastuser': {
+      await answerCallback(queryId)
+      const recent = getRecentSessions(50)
+      const match = recent.find(r => r.sessionId.startsWith(id))
+      if (!match) { await sendMsg(chatId, `Session not found: <code>${esc(id)}</code>`); break }
+      const msgs = parseJsonlFile(match.filepath).filter(m => !m.isMeta && m.type === 'user')
+      const last = msgs[msgs.length - 1]
+      if (!last) { await sendMsg(chatId, 'No user messages found.'); break }
+      const text = last.content.filter(b => b.type === 'text').map(b => b.text ?? '').join(' ')
+      await sendMsg(chatId, `👤 <b>Last instruction</b> (<code>${esc(id)}</code>)\n\n${esc(truncate(text, 800))}`)
+      break
+    }
     case 'switch': {
       const recent = getRecentSessions(50)
       const match = recent.find(r => r.sessionId.startsWith(id))
