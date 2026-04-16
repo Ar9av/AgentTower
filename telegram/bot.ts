@@ -818,6 +818,7 @@ async function handleStart(chatId: number) {
     `/task &lt;prompt&gt; — start a new session (skip permissions)`,
     `/safetask &lt;prompt&gt; — start with default permissions`,
     `/plan &lt;prompt&gt; — start in plan mode (read-only)`,
+    `/research &lt;topic&gt; — research &amp; deliver a report file`,
     ``,
     `<b>Navigation</b>`,
     `/sessions — list recent sessions (with buttons)`,
@@ -952,6 +953,129 @@ async function handleBriefingConfig(chatId: number, arg: string) {
   state.briefingHour = h
   saveState(state)
   await sendMsg(chatId, `✅ Daily briefing set to <b>${h}:00 UTC</b>`)
+}
+
+// ── /research — universal research task ────────────────────────────────────
+
+const BRAIN_DIR = process.env.BRAIN_DIR ?? path.join(os.homedir(), 'brain')
+
+const RESEARCH_SYSTEM = `You are a research assistant. Your job is to deeply research the given topic, then produce a single comprehensive Markdown file as your deliverable.
+
+Rules:
+1. Use WebSearch and WebFetch to gather information from the web. Be thorough — check multiple sources.
+2. Write your findings to a .md file in the current directory. Name it descriptively (e.g. "ai-agent-frameworks.md").
+3. Structure with headings, tables, bullet points, and code examples where relevant.
+4. Include a "Sources" section at the end with URLs.
+5. The file IS the deliverable — make it complete, well-organized, and actionable.
+6. Do NOT create multiple files. One comprehensive markdown file.`
+
+async function handleResearch(chatId: number, rawPrompt: string) {
+  const topic = rawPrompt.trim()
+  if (!topic) {
+    await sendMsg(chatId, 'Usage: /research &lt;topic&gt;\n\nExample: <code>/research AI agentic frameworks comparison 2025</code>')
+    return
+  }
+
+  fs.mkdirSync(BRAIN_DIR, { recursive: true })
+
+  const prompt = `${RESEARCH_SYSTEM}\n\n---\n\nResearch topic: ${topic}`
+
+  await sendMsg(chatId, `🔬 <b>Research</b> starting in <code>~/brain</code>\n<i>${esc(truncate(topic, 120))}</i>`)
+  await sendChatAction(chatId)
+
+  const proc = spawn('claude', ['--dangerously-skip-permissions', '-p', prompt], {
+    cwd: BRAIN_DIR, detached: true, stdio: 'ignore',
+  })
+  proc.unref()
+
+  await new Promise(r => setTimeout(r, 2000))
+  const recent = getRecentSessions(5)
+  const newest = recent.find(s => {
+    try { return decodeProjectPath(s.projectDirName).endsWith('/brain') } catch { return false }
+  }) ?? recent[0]
+
+  if (!newest) {
+    await sendMsg(chatId, 'Session started but file not found yet. Try /sessions.')
+    return
+  }
+
+  setActiveSessionId(chatId, newest.sessionId)
+  updatePinnedStatuses()
+
+  // Start streaming, and when it ends, deliver the file
+  await startStreaming(chatId, newest.sessionId, newest.filepath)
+
+  // Watch for completion in background — deliver file when done
+  watchForDeliverable(chatId, newest.sessionId, BRAIN_DIR)
+}
+
+function watchForDeliverable(chatId: number, sessionId: string, dir: string) {
+  const startTime = Date.now()
+  const seen = new Set<string>()
+  // Snapshot existing .md files
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (f.endsWith('.md')) seen.add(f)
+    }
+  } catch {}
+
+  const timer = setInterval(async () => {
+    // Stop after 60 min
+    if (Date.now() - startTime > 60 * 60 * 1000) { clearInterval(timer); return }
+
+    // Check if session is still running
+    const running = scanClaudeSessions(getClaudeDir())
+    if (running[sessionId]) return  // still going
+
+    clearInterval(timer)
+
+    // Find new .md files
+    let newFiles: string[] = []
+    try {
+      newFiles = fs.readdirSync(dir)
+        .filter(f => f.endsWith('.md') && !seen.has(f))
+        .map(f => path.join(dir, f))
+    } catch {}
+
+    // Also check for recently modified existing .md files (updated, not new)
+    if (newFiles.length === 0) {
+      try {
+        const cutoff = startTime - 5000  // files modified after task started
+        newFiles = fs.readdirSync(dir)
+          .filter(f => f.endsWith('.md'))
+          .map(f => path.join(dir, f))
+          .filter(f => { try { return fs.statSync(f).mtimeMs > cutoff } catch { return false } })
+      } catch {}
+    }
+
+    if (newFiles.length === 0) {
+      await sendMsg(chatId, '📝 Research done but no .md file was created. Check /logs for what happened.')
+      return
+    }
+
+    // Send each file
+    for (const filepath of newFiles) {
+      const filename = path.basename(filepath)
+      await sendMsg(chatId, `📄 <b>${esc(filename)}</b>`, {}, true)
+
+      // Send as markdown document
+      await sendAsFile(chatId, fs.readFileSync(filepath, 'utf-8'), filename)
+
+      // Try PDF conversion via pandoc
+      const pdfPath = filepath.replace(/\.md$/, '.pdf')
+      try {
+        await execFileP('pandoc', [filepath, '-o', pdfPath, '--pdf-engine=wkhtmltopdf', '-V', 'geometry:margin=1in'], { timeout: 30000 })
+        if (fs.existsSync(pdfPath)) {
+          await sendBinaryFile(chatId, pdfPath, path.basename(pdfPath))
+          try { fs.unlinkSync(pdfPath) } catch {}
+        }
+      } catch {
+        // PDF conversion optional — skip if it fails
+      }
+    }
+
+    await sendMsg(chatId, `✅ Research delivered. Reply with instructions to follow up.`, sessionKeyboard(sessionId, false, false))
+  }, 5000)
 }
 
 type TaskMode = 'default' | 'skip' | 'plan'
@@ -1162,6 +1286,17 @@ async function sendAsFile(chatId: number, content: string, filename: string) {
     console.error('sendDocument failed:', err)
   } finally {
     try { fs.unlinkSync(tmp) } catch {}
+  }
+}
+
+async function sendBinaryFile(chatId: number, filepath: string, filename: string) {
+  try {
+    const form = new FormData()
+    form.append('chat_id', String(chatId))
+    form.append('document', new Blob([fs.readFileSync(filepath)]), filename)
+    await fetch(`${API}/sendDocument`, { method: 'POST', body: form })
+  } catch (err) {
+    console.error('sendBinaryFile failed:', err)
   }
 }
 
@@ -1470,6 +1605,7 @@ async function poll() {
         if (matchCmd('/task'))      { await handleTask(chatId, args('/task'), 'skip'); continue }
         if (matchCmd('/safetask'))  { await handleTask(chatId, args('/safetask'), 'default'); continue }
         if (matchCmd('/plan'))      { await handleTask(chatId, args('/plan'), 'plan'); continue }
+        if (matchCmd('/research'))  { await handleResearch(chatId, args('/research')); continue }
 
         if (matchCmd('/watch'))  { await handleWatch(chatId, args('/watch')); continue }
         if (matchCmd('/kill'))   { await handleKill(chatId, args('/kill')); continue }
@@ -1517,6 +1653,7 @@ async function registerCommands() {
       { command: 'task',      description: 'Start a new Claude session' },
       { command: 'safetask',  description: 'Start with default permissions' },
       { command: 'plan',      description: 'Start in plan/read-only mode' },
+      { command: 'research',  description: 'Research a topic → get a report file' },
       { command: 'live',      description: 'Auto-updating live dashboard' },
       { command: 'sessions',  description: 'List recent sessions' },
       { command: 'status',    description: 'Pinned control center' },
