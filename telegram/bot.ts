@@ -52,6 +52,7 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true })
 interface PersistedState {
   userDefaults: Record<string, { cwd?: string }>   // chatId → prefs
   pinnedStatus?: Record<string, number>             // chatId → message_id
+  activeSession?: Record<string, string>            // chatId → sessionId (which session receives replies)
   briefingHour?: number                             // 0-23 UTC (default 9)
   lastBriefingDate?: string                         // YYYY-MM-DD of last sent
 }
@@ -73,6 +74,19 @@ function userCwd(chatId: number): string {
 function setUserCwd(chatId: number, cwd: string) {
   state.userDefaults[String(chatId)] ??= {}
   state.userDefaults[String(chatId)].cwd = cwd
+  saveState(state)
+}
+
+function getActiveSessionId(chatId: number): string | null {
+  return state.activeSession?.[String(chatId)] ?? null
+}
+function setActiveSessionId(chatId: number, sessionId: string | null) {
+  state.activeSession ??= {}
+  if (sessionId) {
+    state.activeSession[String(chatId)] = sessionId
+  } else {
+    delete state.activeSession[String(chatId)]
+  }
   saveState(state)
 }
 
@@ -636,10 +650,11 @@ async function handleLive(chatId: number) {
 
 // ── Pinned control center ─────────────────────────────────────────────────
 
-function buildStatusText(): string {
+function buildStatusText(chatId?: number): string {
   const running = scanClaudeSessions(getClaudeDir())
   const entries = Object.entries(running)
   const now = Date.now()
+  const activeId = chatId ? getActiveSessionId(chatId) : null
 
   if (entries.length === 0) return `🗼 <b>Control Center</b>\n\n✨ All clear — no running sessions.\n\n<i>${new Date().toLocaleTimeString('en', { hour12: false })}</i>`
 
@@ -650,18 +665,44 @@ function buildStatusText(): string {
     const mtime = sessionJsonlMtime(id, p.cwd)
     const idle = mtime ? Math.floor((now - mtime) / 60_000) : 0
     const stale = idle >= 10 ? ' ⚠️' : ''
-    rows.push(`${icon}${stale}`)
+    const isActive = activeId === id || (!activeId && entries.indexOf([id, p]) === 0)
+    const chatIcon = isActive ? '💬' : ''
+    rows.push(`${icon}${stale} ${chatIcon}`)
     rows.push(`📁 <b>${esc(path.basename(p.cwd))}</b>  <code>${esc(id.slice(0, 8))}</code>`)
     if (idle > 0) rows.push(`⏱ idle ${idle}m`)
+    if (isActive) rows.push(`<i>↑ replies go here</i>`)
     rows.push('')
   }
   rows.push(`<i>Updated ${new Date().toLocaleTimeString('en', { hour12: false })}</i>`)
   return rows.join('\n')
 }
 
+function buildStatusKeyboard(): { reply_markup: { inline_keyboard: Btn[][] } } {
+  const running = scanClaudeSessions(getClaudeDir())
+  const entries = Object.entries(running)
+  const rows: Btn[][] = []
+
+  // Switch buttons per running session
+  for (const [id, p] of entries) {
+    const short = id.slice(0, 8)
+    const name = path.basename(p.cwd)
+    rows.push([
+      { text: `💬 Chat: ${name}`, callback_data: `switch:${short}` },
+      { text: `👁 Watch`, callback_data: `watch:${short}` },
+      { text: `✕ Kill`, callback_data: `kill:${short}` },
+    ])
+  }
+  rows.push([
+    { text: '🔄 Refresh', callback_data: 'quick:status' },
+    { text: '📜 Last 10', callback_data: 'last:' },
+  ])
+  return { reply_markup: { inline_keyboard: rows } }
+}
+
 async function handlePinnedStatus(chatId: number) {
-  const text = buildStatusText()
-  const msg = await sendMsg(chatId, text)
+  const text = buildStatusText(chatId)
+  const kb = buildStatusKeyboard()
+  const msg = await sendMsg(chatId, text, kb)
   if (!msg) return
 
   // Pin the message
@@ -675,11 +716,11 @@ async function handlePinnedStatus(chatId: number) {
 
 function updatePinnedStatuses() {
   if (!state.pinnedStatus) return
-  const text = buildStatusText()
   for (const [chatIdStr, msgId] of Object.entries(state.pinnedStatus)) {
     const chatId = parseInt(chatIdStr, 10)
-    editMsg(chatId, msgId, text).catch(() => {
-      // Message may have been deleted
+    const text = buildStatusText(chatId)
+    const kb = buildStatusKeyboard()
+    editMsg(chatId, msgId, text, kb).catch(() => {
       delete state.pinnedStatus![chatIdStr]
       saveState(state)
     })
@@ -947,6 +988,7 @@ async function spawnTask(
     await sendMsg(chatId, 'Session started but session file not found yet. Try /sessions.')
     return
   }
+  setActiveSessionId(chatId, newest.sessionId)
   updatePinnedStatuses()
   await startStreaming(chatId, newest.sessionId, newest.filepath)
 }
@@ -1145,17 +1187,21 @@ async function handleWhoami(chatId: number) {
 // Plain text reply — inject into active session
 async function handleReply(chatId: number, text: string) {
   const running = scanClaudeSessions(getClaudeDir())
-  const active = Object.values(running).find(p => getProcessState(p.pid) === 'running')
+  const allRunning = Object.values(running).filter(p => getProcessState(p.pid) === 'running')
 
   const attachments = consumeAttachments(chatId)
   const body = attachmentPreamble(attachments) + text
 
-  if (!active) {
+  if (allRunning.length === 0) {
     await handleTask(chatId, body, 'skip')
     return
   }
 
-  await sendMsg(chatId, `📨 <i>Sending to session <code>${esc(active.sessionId.slice(0, 8))}</code>...</i>`)
+  // Prefer the user's selected active session, fall back to first running
+  const preferred = getActiveSessionId(chatId)
+  const active = (preferred ? allRunning.find(p => p.sessionId === preferred) : null) ?? allRunning[0]
+
+  await sendMsg(chatId, `📨 <i>Sending to <b>${esc(path.basename(active.cwd))}</b> <code>${esc(active.sessionId.slice(0, 8))}</code></i>`)
 
   const proc = spawn('claude', ['--resume', active.sessionId, '-p', body], {
     cwd: active.cwd, detached: true, stdio: 'ignore',
@@ -1248,6 +1294,18 @@ async function handleCallback(chatId: number, queryId: string, data: string, use
     case 'logs10': await answerCallback(queryId);               await handleLogs(chatId, id, '10'); break
     case 'logs20': await answerCallback(queryId);               await handleLogs(chatId, id, '20'); break
     case 'last':   await answerCallback(queryId);               await handleLogs(chatId, '', '10'); break
+    case 'switch': {
+      // Switch active chat session
+      const recent = getRecentSessions(30)
+      const match = recent.find(r => r.sessionId.startsWith(id))
+      if (!match) { await answerCallback(queryId, 'Session not found'); break }
+      const running = scanClaudeSessions(getClaudeDir())
+      if (!running[match.sessionId]) { await answerCallback(queryId, 'Session not running'); break }
+      setActiveSessionId(chatId, match.sessionId)
+      await answerCallback(queryId, `Switched to ${path.basename(findSessionProjectCwd(match.sessionId) ?? '')}`)
+      updatePinnedStatuses()
+      break
+    }
     case 'diff':   await answerCallback(queryId, 'Running git diff...'); await handleDiff(chatId, id); break
     case 'quick:live':     await answerCallback(queryId); await handleLive(chatId); break
     case 'quick:sessions': await answerCallback(queryId); await handleSessions(chatId); break
