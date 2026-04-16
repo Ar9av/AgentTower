@@ -103,18 +103,29 @@ export default function Notifications() {
       </button>
 
       {open && (
-        <div
-          className="glass-lg"
-          style={{
-            position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-            width: 'min(360px, 90vw)',
-            maxHeight: 500,
-            borderRadius: 12,
-            display: 'flex', flexDirection: 'column',
-            zIndex: 150,
-            boxShadow: '0 8px 40px rgba(0,0,0,0.35)',
-          }}
-        >
+        <>
+          {/* Backdrop for mobile */}
+          <div
+            onClick={() => setOpen(false)}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 998,
+              background: 'rgba(0,0,0,0.3)',
+            }}
+          />
+          <div
+            className="glass-lg"
+            style={{
+              position: 'fixed',
+              top: 58,
+              right: 8,
+              width: 'min(360px, calc(100vw - 16px))',
+              maxHeight: 'calc(100vh - 80px)',
+              borderRadius: 12,
+              display: 'flex', flexDirection: 'column',
+              zIndex: 999,
+              boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+            }}
+          >
           {/* Running section */}
           {running.length > 0 && (
             <>
@@ -245,6 +256,7 @@ export default function Notifications() {
             </div>
           )}
         </div>
+        </>
       )}
     </div>
   )
