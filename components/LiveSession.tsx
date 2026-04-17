@@ -300,7 +300,8 @@ export default function LiveSession({
 
   async function killAndRestart(e: React.FormEvent) {
     e.preventDefault()
-    if (!inputText.trim() || sending) return
+    if (sending) return
+    const promptText = inputText.trim() || 'hi'
     setSending(true)
     try {
       if (pid) {
@@ -310,11 +311,23 @@ export default function LiveSession({
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_path: projectPath, prompt: inputText.trim() }),
+        body: JSON.stringify({ project_path: projectPath, prompt: promptText }),
       })
       if (res.ok) {
         const { pid: newPid } = await res.json()
         setInputText(''); setPid(newPid); setProcState('running'); setWasInterrupted(false)
+        // Redirect to the newly spawned session
+        setTimeout(async () => {
+          try {
+            const r = await fetch('/api/recent-sessions?limit=3')
+            if (!r.ok) return
+            const sessions = await r.json() as Array<{ encodedFilepath: string; projectDirName: string; mtime: number }>
+            const newest = sessions[0]
+            if (newest && newest.encodedFilepath !== encodedFilepath) {
+              router.push(`/session?f=${newest.encodedFilepath}`)
+            }
+          } catch { /* ignore */ }
+        }, 2000)
       }
     } finally { setSending(false) }
   }
@@ -760,8 +773,8 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
           </button>
           <button type="button" className="glass-btn"
             onClick={onKillAndRestart as unknown as React.MouseEventHandler}
-            disabled={!inputText.trim() || sending}
-            title="Start a new session in the same project"
+            disabled={sending}
+            title="Start a new session in the same project (uses your text or 'hi' if empty)"
             style={{ padding: '8px 14px', fontSize: 13, minHeight: 36 }}>
             New ↗
           </button>
