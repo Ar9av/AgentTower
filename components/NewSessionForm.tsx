@@ -25,20 +25,26 @@ export default function NewSessionForm({ projectPath }: Props) {
     try {
       let finalPrompt = prompt.trim()
 
-      // Upload image if attached
+      // Upload file/image if attached
       if (image) {
         try {
-          const uploadRes = await fetch('/api/upload-image', {
+          const isImage = image.mediaType.startsWith('image/')
+          const endpoint = isImage ? '/api/upload-image' : '/api/upload-file'
+          const body = isImage
+            ? { data: image.base64, mediaType: image.mediaType }
+            : { data: image.base64, name: image.name }
+          const uploadRes = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: image.base64, mediaType: image.mediaType }),
+            body: JSON.stringify(body),
           })
           if (uploadRes.ok) {
             const { filepath } = await uploadRes.json()
-            finalPrompt = finalPrompt ? `${finalPrompt}\n\n[Image: ${filepath}]` : `[Image: ${filepath}]`
+            const tag = isImage ? `[Image: ${filepath}]` : `[File: ${filepath}]`
+            finalPrompt = finalPrompt ? `${finalPrompt}\n\n${tag}` : tag
           }
         } catch {
-          // Continue without image if upload fails
+          // Continue if upload fails
         }
       }
 

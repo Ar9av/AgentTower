@@ -113,7 +113,6 @@ export default function Notifications() {
             }}
           />
           <div
-            className="glass-lg"
             style={{
               position: 'fixed',
               top: 58,
@@ -124,6 +123,9 @@ export default function Notifications() {
               display: 'flex', flexDirection: 'column',
               zIndex: 999,
               boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+              background: 'var(--bg, #0b0f1a)',
+              border: '1px solid var(--glass-border)',
+              overflow: 'hidden',
             }}
           >
           {/* Running section */}

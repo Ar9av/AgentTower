@@ -233,16 +233,22 @@ export default function LiveSession({
     atBottomRef.current = true // force scroll to bottom
 
     try {
-      // 2. Upload image if attached
+      // 2. Upload file/image if attached
       if (attachedImage) {
-        const uploadRes = await fetch('/api/upload-image', {
+        const isImage = attachedImage.mediaType.startsWith('image/')
+        const endpoint = isImage ? '/api/upload-image' : '/api/upload-file'
+        const body = isImage
+          ? { data: attachedImage.base64, mediaType: attachedImage.mediaType }
+          : { data: attachedImage.base64, name: attachedImage.name }
+        const uploadRes = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: attachedImage.base64, mediaType: attachedImage.mediaType }),
+          body: JSON.stringify(body),
         })
         if (uploadRes.ok) {
           const { filepath } = await uploadRes.json()
-          prompt = prompt ? `${prompt}\n\n[Image: ${filepath}]` : `[Image: ${filepath}]`
+          const tag = isImage ? `[Image: ${filepath}]` : `[File: ${filepath}]`
+          prompt = prompt ? `${prompt}\n\n${tag}` : tag
         }
       }
 
@@ -689,11 +695,15 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
   if (procState === 'running') return (
     <div className="glass-lg" style={{ padding: pad, ...base }}>
       <form onSubmit={onSendInput} style={{ maxWidth: 840, margin: '0 auto' }}>
-        {/* Image preview row */}
+        {/* Attachment preview row */}
         {attachedImage && (
           <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={attachedImage.dataUrl} alt="" style={{ height: 56, width: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--glass-border)', flexShrink: 0 }} />
+            {attachedImage.mediaType.startsWith('image/') ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={attachedImage.dataUrl} alt="" style={{ height: 56, width: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--glass-border)', flexShrink: 0 }} />
+            ) : (
+              <div style={{ height: 56, width: 56, borderRadius: 8, border: '1px solid var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>📎</div>
+            )}
             <span style={{ fontSize: 12, color: 'var(--text2)' }}>{attachedImage.name}</span>
             <button type="button" onClick={() => onAttachImage(null)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', marginLeft: 'auto', fontSize: 16, padding: 4 }}>✕</button>
           </div>
