@@ -264,20 +264,36 @@ function ToolResultBlock({ block }: { block: ContentBlock }) {
 
 function ThinkingBlock({ block }: { block: ContentBlock }) {
   return (
-    <details style={{
+    <div style={{
       margin: '6px 0',
-      background: 'color-mix(in srgb, var(--yellow) 8%, var(--glass-bg))',
-      border: '1px solid color-mix(in srgb, var(--yellow) 22%, transparent)',
-      borderRadius: 8,
-      backdropFilter: 'blur(8px)',
+      borderLeft: '2px solid color-mix(in srgb, var(--yellow) 45%, transparent)',
+      paddingLeft: 10,
+      paddingTop: 2,
+      paddingBottom: 2,
     }}>
-      <summary style={{ padding: '7px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--yellow)', userSelect: 'none', fontWeight: 500 }}>
-        💭 Thinking
-      </summary>
-      <div style={{ padding: '8px 14px', fontSize: 13, color: 'var(--text2)', borderTop: '1px solid color-mix(in srgb, var(--yellow) 18%, transparent)', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
+      <div style={{
+        fontSize: 10,
+        color: 'color-mix(in srgb, var(--yellow) 70%, transparent)',
+        fontWeight: 700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        marginBottom: 4,
+      }}>
+        Thinking
+      </div>
+      <div style={{
+        fontSize: 12,
+        color: 'var(--text3)',
+        fontStyle: 'italic',
+        whiteSpace: 'pre-wrap',
+        lineHeight: 1.55,
+        maxHeight: 180,
+        overflowY: 'auto',
+        wordBreak: 'break-word',
+      }}>
         {block.thinking}
       </div>
-    </details>
+    </div>
   )
 }
 
