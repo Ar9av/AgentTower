@@ -344,3 +344,34 @@ textarea.glass-input { font-family: inherit; resize: none; }
   from { opacity:0; transform:translateY(6px); }
   to   { opacity:1; transform:translateY(0); }
 }
+@keyframes pulse-glow {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:0.45; transform:scale(0.65); }
+}
+
+/* Dashboard / voice active dot */
+.dot-active {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green); display: inline-block;
+  animation: pulse-glow 1.4s ease-in-out infinite;
+}
+
+/* glass-interactive — hoverable card variant */
+.glass-interactive {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdropFilter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.glass-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 32px rgba(0,0,0,0.35);
+  border-color: rgba(255,255,255,0.15);
+}
+
+/* glass-bg-hover for dropdowns */
+.glass-bg-hover { background: rgba(255,255,255,0.09); }
+
+/* purple accent */
+:root { --purple: #a78bfa; }

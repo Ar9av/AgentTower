@@ -110,6 +110,17 @@ export default function Nav() {
 
           <Notifications />
 
+          {/* Dashboard */}
+          <Link
+            href="/dashboard"
+            className="glass-btn hide-mobile"
+            style={{ padding: '6px 12px', minHeight: 36, fontSize: 13, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+            title="Mission Control — all sessions at a glance"
+          >
+            <span>⚡</span>
+            <span>Dashboard</span>
+          </Link>
+
           {/* Integrations */}
           <Link
             href="/integrations"
