@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { ParsedMessage, PaginatedSession } from '@/lib/types'
 import MessageBlock from './MessageBlock'
 import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment'
@@ -397,6 +397,31 @@ export default function LiveSession({
   // Is the firstMessage already in the visible window?
   const firstInWindow = firstMessage && messages.some(m => m.uuid === firstMessage.uuid)
 
+  // Build tool-result lookup: tool_id → ContentBlock (for inline display in CombinedToolBlock)
+  const toolResultMap = useMemo(() => {
+    const map = new Map<string, import('@/lib/types').ContentBlock>()
+    const allMsgs = firstMessage ? [firstMessage, ...messages] : messages
+    for (const msg of allMsgs) {
+      if (msg.type !== 'user') continue
+      for (const block of msg.content) {
+        if (block.type === 'tool_result' && block.tool_id) {
+          map.set(block.tool_id, block)
+        }
+      }
+    }
+    return map
+  }, [firstMessage, messages])
+
+  // Filter out user messages that contain only tool_result blocks (now shown inline)
+  const displayMessages = useMemo(() => messages.filter(msg => {
+    if (msg.type !== 'user') return true
+    const relevant = msg.content.filter(b =>
+      b.type === 'tool_result' || (b.type === 'text' && (b.text ?? '').trim().length > 0)
+    )
+    if (relevant.length === 0) return true
+    return !relevant.every(b => b.type === 'tool_result')
+  }), [messages])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
 
@@ -492,7 +517,7 @@ export default function LiveSession({
                   Original instruction
                 </span>
               </div>
-              <MessageBlock message={firstMessage} encodedFilepath={encodedFilepath} />
+              <MessageBlock message={firstMessage} encodedFilepath={encodedFilepath} toolResultMap={toolResultMap} />
 
               {/* Load more / hidden count divider */}
               <div style={{
@@ -554,7 +579,7 @@ export default function LiveSession({
               <p>No messages yet</p>
             </div>
           ) : (
-            messages.map(msg => <MessageBlock key={msg.uuid} message={msg} encodedFilepath={encodedFilepath} />)
+            displayMessages.map(msg => <MessageBlock key={msg.uuid} message={msg} encodedFilepath={encodedFilepath} toolResultMap={toolResultMap} />)
           )}
 
           {/* Continuation session found — direct link */}
