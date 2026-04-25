@@ -110,6 +110,16 @@ export default function Nav() {
 
           <Notifications />
 
+          {/* Tower */}
+          <Link
+            href="/tower"
+            className="glass-btn hide-mobile"
+            style={{ padding: '6px 12px', minHeight: 36, fontSize: 13, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+            title="Agent Tower"
+          >
+            🏰 Tower
+          </Link>
+
           {/* Integrations */}
           <Link
             href="/integrations"
