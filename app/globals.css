@@ -384,3 +384,9 @@ textarea.glass-input { font-family: inherit; resize: none; }
 .tower-agent-working { animation: tower-bob 1.1s ease-in-out infinite; }
 .tower-agent-done    { animation: tower-jump 0.75s ease-in-out 3; }
 .tower-agent-signal  { animation: tower-wave 0.85s ease-in-out infinite; }
+
+/* Two-layer sprite frame swap — toggle visibility every half-cycle */
+@keyframes tower-frame-blink {
+  0%, 49.9%   { opacity: 1; }
+  50%, 100%   { opacity: 0; }
+}

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, CSSProperties } from 'react'
 import Link from 'next/link'
 import type { RecentSession } from '@/lib/claude-fs'
-import type { PaginatedSession, ParsedMessage } from '@/lib/types'
+import type { PaginatedSession, ParsedMessage, ProjectInfo, SessionInfo } from '@/lib/types'
 
 // ── Sprite sheet constants ─────────────────────────────────────────────────
 const CELL_PX = 288
@@ -30,32 +30,53 @@ const STATE_LABEL: Record<AgentState, string> = {
   idle: 'idle', working: 'working…', done: 'done!', signal: 'signaling',
 }
 
+// Tool / activity → emoji badge
+const TOOL_EMOJI: Record<string, string> = {
+  thinking: '💭',
+  writing: '✍️',
+  Bash: '⌘',
+  Read: '👁',
+  Write: '📝',
+  Edit: '✏️',
+  MultiEdit: '✏️',
+  Grep: '🔍',
+  Glob: '📂',
+  WebSearch: '🌐',
+  WebFetch: '🌐',
+  Task: '🤝',
+  TodoWrite: '📋',
+  NotebookEdit: '📓',
+}
+function toolEmoji(activity: string | null): string | null {
+  if (!activity) return null
+  return TOOL_EMOJI[activity] ?? '🔧'
+}
+function toolLabel(activity: string | null): string {
+  if (!activity) return ''
+  if (activity === 'thinking') return 'thinking…'
+  if (activity === 'writing') return 'writing…'
+  return `${activity}…`
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 function hashId(id: string): number {
   let h = 0
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
   return Math.abs(h)
 }
-
-function sessionHue(id: string): number {
-  return hashId(id) % 360
-}
-
+function sessionHue(id: string): number { return hashId(id) % 360 }
 function relTime(ms: number): string {
   const s = Math.floor((Date.now() - ms) / 1000)
   if (s < 60) return `${s}s ago`
   if (s < 3600) return `${Math.floor(s / 60)}m ago`
   return `${Math.floor(s / 3600)}h ago`
 }
-
 function firstText(blocks: ParsedMessage['content']): string {
   for (const b of blocks) {
     if (b.type === 'text' && b.text) return b.text.replace(/<[^>]+>/g, '').trim()
   }
   return ''
 }
-
-// Per-agent layout data — unique wander path seeded from sessionId
 function agentWander(sessionId: string, isIdle: boolean) {
   const h = hashId(sessionId)
   return {
@@ -90,7 +111,7 @@ function useProcessedSheet(src: string): string | null {
   return dataUrl
 }
 
-// ── Sprite ─────────────────────────────────────────────────────────────────
+// ── Sprite (single frame) ──────────────────────────────────────────────────
 function Sprite({ row, col, hue = 0, size = DISP, sheet, animClass = '', style = {} }: {
   row: number; col: number; hue?: number; size?: number
   sheet: string | null; animClass?: string; style?: CSSProperties
@@ -113,6 +134,25 @@ function Sprite({ row, col, hue = 0, size = DISP, sheet, animClass = '', style =
   )
 }
 
+// Two sprites layered, alternating visibility — gives a frame animation feel
+function AnimatedSprite({ row, colA, colB, hue, size, sheet, cycleMs = 700, animClass = '' }: {
+  row: number; colA: number; colB: number; hue: number; size: number
+  sheet: string | null; cycleMs?: number; animClass?: string
+}) {
+  return (
+    <div className={animClass} style={{ position: 'relative', width: size, height: size }}>
+      <Sprite row={row} col={colA} hue={hue} size={size} sheet={sheet} style={{
+        position: 'absolute', inset: 0,
+        animation: `tower-frame-blink ${cycleMs}ms steps(1) infinite`,
+      }} />
+      <Sprite row={row} col={colB} hue={hue} size={size} sheet={sheet} style={{
+        position: 'absolute', inset: 0,
+        animation: `tower-frame-blink ${cycleMs}ms steps(1) -${cycleMs / 2}ms infinite`,
+      }} />
+    </div>
+  )
+}
+
 // ── Agent card ────────────────────────────────────────────────────────────
 function AgentCard({ session, state, sheet, onClick }: {
   session: RecentSession; state: AgentState
@@ -121,13 +161,28 @@ function AgentCard({ session, state, sheet, onClick }: {
   const hue = sessionHue(session.sessionId)
   const isIdle = state === 'idle'
   const isWorking = state === 'working'
+  const isDone = state === 'done'
   const wander = agentWander(session.sessionId, isIdle)
   const h = hashId(session.sessionId)
-  // Slightly vary display size for depth — working agents appear a bit larger
   const displaySize = isWorking ? 82 : isIdle ? 66 : DISP
+  const emoji = isWorking ? toolEmoji(session.currentActivity) : null
+  const activityText = isWorking ? toolLabel(session.currentActivity) : null
+
+  // Choose sprite element based on state
+  const spriteEl = isWorking ? (
+    <AnimatedSprite row={ROW.AGENT} colA={COL.IDLE} colB={COL.WORKING}
+      hue={hue} size={displaySize} sheet={sheet} cycleMs={650}
+      animClass={STATE_ANIM_CLASS.working} />
+  ) : isDone ? (
+    <AnimatedSprite row={ROW.AGENT} colA={COL.DONE} colB={COL.SIGNAL}
+      hue={hue} size={displaySize} sheet={sheet} cycleMs={400}
+      animClass={STATE_ANIM_CLASS.done} />
+  ) : (
+    <Sprite row={ROW.AGENT} col={STATE_COL[state]} hue={hue} size={displaySize}
+      sheet={sheet} animClass={STATE_ANIM_CLASS[state]} />
+  )
 
   return (
-    // Wander wrapper (translate only, no other transforms)
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       ['--wx' as string]: `${wander.wx}px`,
@@ -142,14 +197,12 @@ function AgentCard({ session, state, sheet, onClick }: {
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
           opacity: isIdle ? 0.48 : 1,
           filter: isIdle ? 'grayscale(50%)' : undefined,
-          transition: 'opacity 0.25s, filter 0.25s',
+          transition: 'opacity 0.25s, filter 0.25s, transform 0.15s',
         }}
         onMouseEnter={e => {
           const el = e.currentTarget as HTMLElement
-          el.style.opacity = '1'
-          el.style.filter = 'none'
+          el.style.opacity = '1'; el.style.filter = 'none'
           el.style.transform = 'scale(1.1)'
-          el.style.transition = 'transform 0.15s, opacity 0.15s, filter 0.15s'
         }}
         onMouseLeave={e => {
           const el = e.currentTarget as HTMLElement
@@ -158,8 +211,27 @@ function AgentCard({ session, state, sheet, onClick }: {
           el.style.transform = ''
         }}
       >
-        {/* Thinking dots for working agents */}
-        {isWorking && (
+        {/* Tool/activity badge for working agents */}
+        {isWorking && emoji && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '2px 8px',
+            background: 'rgba(91,163,255,0.18)',
+            border: '1px solid rgba(91,163,255,0.3)',
+            borderRadius: 99,
+            fontSize: 11, lineHeight: 1.1,
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            marginBottom: 2,
+            animation: 'tower-pulse 1.6s ease-in-out infinite',
+          }}>
+            <span style={{ fontSize: 13 }}>{emoji}</span>
+            <span style={{ color: 'var(--text)', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+              {session.currentActivity}
+            </span>
+          </div>
+        )}
+        {isWorking && !emoji && (
           <div style={{ display: 'flex', gap: 3, marginBottom: 2, height: 10, alignItems: 'flex-end' }}>
             {[0, 1, 2].map(i => (
               <div key={i} style={{
@@ -170,32 +242,20 @@ function AgentCard({ session, state, sheet, onClick }: {
             ))}
           </div>
         )}
-        {/* Done/signal — star burst indicator */}
         {(state === 'done' || state === 'signal') && (
           <div style={{
-            fontSize: 12, marginBottom: 0,
-            animation: 'tower-pulse 0.9s ease-in-out infinite',
+            fontSize: 12, animation: 'tower-pulse 0.9s ease-in-out infinite',
           }}>
             {state === 'done' ? '✦' : '☆'}
           </div>
         )}
 
-        {/* Sprite */}
-        <Sprite
-          row={ROW.AGENT}
-          col={STATE_COL[state]}
-          hue={hue}
-          sheet={sheet}
-          size={displaySize}
-          animClass={STATE_ANIM_CLASS[state]}
-        />
+        {spriteEl}
 
-        {/* Ground shadow oval */}
+        {/* Ground shadow */}
         <div style={{
           width: displaySize * 0.7, height: 6, borderRadius: '50%',
-          background: 'rgba(0,0,0,0.45)',
-          filter: 'blur(3px)',
-          marginTop: -6,
+          background: 'rgba(0,0,0,0.45)', filter: 'blur(3px)', marginTop: -6,
           transform: `scaleX(${0.8 + (h % 5) * 0.05})`,
         }} />
 
@@ -203,7 +263,7 @@ function AgentCard({ session, state, sheet, onClick }: {
         <div style={{ textAlign: 'center', marginTop: 4 }}>
           <div style={{
             fontSize: 11, fontWeight: 600, color: 'var(--text)',
-            whiteSpace: 'nowrap', maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis',
             textShadow: '0 1px 4px rgba(0,0,0,0.9)',
           }}>
             {session.projectDisplayName}
@@ -212,7 +272,7 @@ function AgentCard({ session, state, sheet, onClick }: {
             fontSize: 10, color: STATE_LABEL_COLOR[state],
             textShadow: '0 1px 4px rgba(0,0,0,0.95)',
           }}>
-            {STATE_LABEL[state]}
+            {activityText || STATE_LABEL[state]}
           </div>
         </div>
       </button>
@@ -220,12 +280,159 @@ function AgentCard({ session, state, sheet, onClick }: {
   )
 }
 
-// ── Agent modal ────────────────────────────────────────────────────────────
+// ── Brain orchestrator modal — click the commander ────────────────────────
+function BrainModal({ onClose, onDispatched }: { onClose: () => void; onDispatched: () => void }) {
+  const [projects, setProjects] = useState<ProjectInfo[]>([])
+  const [selectedPath, setSelectedPath] = useState<string>('')
+  const [task, setTask] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const sheet = useProcessedSheet('/sprites/agents.png')
+
+  useEffect(() => {
+    fetch('/api/projects')
+      .then(r => r.ok ? r.json() : [])
+      .then((data: ProjectInfo[]) => {
+        setProjects(data)
+        if (data.length && !selectedPath) setSelectedPath(data[0].decodedPath)
+      })
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function handleDispatch(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedPath || !task.trim()) return
+    setSending(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_path: selectedPath, prompt: task.trim() }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error || `Failed (${res.status})`)
+        return
+      }
+      onDispatched()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 950,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+    }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="glass-lg" style={{
+        width: '100%', maxWidth: 520, borderRadius: 18, overflow: 'hidden',
+        boxShadow: 'var(--shadow-lg)', margin: '0 16px',
+        animation: 'fadeIn 0.18s ease',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12,
+          borderBottom: '1px solid var(--glass-border)',
+          background: 'radial-gradient(ellipse at top, rgba(91,163,255,0.12), transparent)',
+        }}>
+          <div style={{
+            background: 'radial-gradient(circle, rgba(91,163,255,0.2), transparent)',
+            padding: 6, borderRadius: '50%',
+          }}>
+            <Sprite row={ROW.COMMANDER} col={COL.WORKING} sheet={sheet} size={48}
+              animClass="tower-agent-working" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text)' }}>
+              Dispatch a task
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text2)' }}>
+              The Brain spawns a Claude agent in your chosen project
+            </div>
+          </div>
+          <button onClick={onClose} className="glass-btn"
+            style={{ fontSize: 18, padding: '2px 10px', lineHeight: 1 }}>×</button>
+        </div>
+
+        <form onSubmit={handleDispatch} style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Project picker */}
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Project
+            </span>
+            <select
+              value={selectedPath}
+              onChange={e => setSelectedPath(e.target.value)}
+              className="glass-input"
+              style={{ fontSize: 14, padding: '10px 12px', borderRadius: 10, cursor: 'pointer' }}
+              disabled={sending}
+            >
+              {projects.length === 0 && <option value="">Loading…</option>}
+              {projects.map(p => (
+                <option key={p.decodedPath} value={p.decodedPath}>
+                  {p.displayName}{p.hasActive ? ' ● active' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {/* Task input */}
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Task
+            </span>
+            <textarea
+              value={task}
+              onChange={e => setTask(e.target.value)}
+              placeholder="What should the agent do? e.g. &quot;Add a unit test for the login flow&quot;"
+              className="glass-input"
+              rows={4}
+              disabled={sending}
+              style={{ fontSize: 14, padding: '10px 12px', borderRadius: 10, resize: 'vertical', minHeight: 80 }}
+              autoFocus
+            />
+          </label>
+
+          {error && (
+            <div style={{ fontSize: 12, color: 'var(--red)', padding: '6px 10px',
+              background: 'rgba(255,90,90,0.08)', borderRadius: 8 }}>
+              {error}
+            </div>
+          )}
+
+          <button type="submit"
+            className="glass-btn-prominent"
+            disabled={!selectedPath || !task.trim() || sending}
+            style={{
+              padding: '10px 16px', fontSize: 14, fontWeight: 700,
+              background: 'rgba(91,163,255,0.25)',
+              border: '1px solid rgba(91,163,255,0.4)',
+              borderRadius: 10,
+            }}
+          >
+            {sending ? 'Dispatching…' : '⚡ Dispatch agent'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Agent dialogue modal ───────────────────────────────────────────────────
 function AgentModal({ session, onClose }: { session: RecentSession; onClose: () => void }) {
   const [messages, setMessages] = useState<ParsedMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [inputText, setInputText] = useState('')
   const [sending, setSending] = useState(false)
+  const [siblings, setSiblings] = useState<SessionInfo[]>([])
+  const [siblingsOpen, setSiblingsOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const sheet = useProcessedSheet('/sprites/agents.png')
   const hue = sessionHue(session.sessionId)
@@ -239,9 +446,7 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
         !m.isMeta && m.content.some(b => b.type === 'text' && b.text?.trim())
       )
       setMessages(relevant.slice(-12))
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }, [session.encodedFilepath])
 
   useEffect(() => {
@@ -251,6 +456,18 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
     return () => clearInterval(iv)
   }, [fetchMessages, session.isActive])
 
+  // Load other sessions in same project
+  useEffect(() => {
+    const enc = btoa(unescape(encodeURIComponent(session.projectDirName)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    fetch(`/api/sessions?p=${enc}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((list: SessionInfo[]) => {
+        setSiblings(list.filter(s => s.sessionId !== session.sessionId).slice(0, 8))
+      })
+      .catch(() => {})
+  }, [session.projectDirName, session.sessionId])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length])
@@ -259,31 +476,39 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
     e.preventDefault()
     const prompt = inputText.trim()
     if (!prompt) return
-    setSending(true)
-    setInputText('')
+    setSending(true); setInputText('')
     try {
+      // /api/input uses -r flag → resumes the session even if its process died
       await fetch('/api/input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: session.sessionId, prompt }),
       })
       setTimeout(fetchMessages, 1800)
-    } finally {
-      setSending(false)
-    }
+    } finally { setSending(false) }
   }
 
+  async function handleStartFresh() {
+    // Need the project decoded path — derive from projectDirName
+    // The simplest path: send user to the project page where they can start a new session
+    onClose()
+    const enc = btoa(unescape(encodeURIComponent(session.projectDirName)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    window.location.href = `/project?p=${enc}`
+  }
+
+  const inputPlaceholder = session.isActive
+    ? 'Continue conversation…'
+    : 'Resume — type a message to wake this session'
+
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 900,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)',
-      }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
-    >
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 900,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)',
+    }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="glass-lg" style={{
-        width: '100%', maxWidth: 520, maxHeight: '82vh',
+        width: '100%', maxWidth: 540, maxHeight: '85vh',
         display: 'flex', flexDirection: 'column', borderRadius: 18,
         overflow: 'hidden', boxShadow: 'var(--shadow-lg)', margin: '0 16px',
         animation: 'fadeIn 0.18s ease',
@@ -307,6 +532,11 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
               <span style={{ color: session.isActive ? 'var(--green)' : 'var(--text3)' }}>
                 {session.isActive ? '● live' : relTime(session.mtime)}
               </span>
+              {session.isActive && session.currentActivity && (
+                <span style={{ color: 'var(--accent)' }}>
+                  {toolEmoji(session.currentActivity)} {session.currentActivity}
+                </span>
+              )}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -316,9 +546,7 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
               Open ↗
             </Link>
             <button onClick={onClose} className="glass-btn"
-              style={{ fontSize: 18, padding: '2px 8px', lineHeight: 1 }}>
-              ×
-            </button>
+              style={{ fontSize: 18, padding: '2px 8px', lineHeight: 1 }}>×</button>
           </div>
         </div>
 
@@ -357,7 +585,7 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
               </div>
             )
           })}
-          {session.isActive && sending && (
+          {sending && (
             <div style={{ alignSelf: 'flex-start', color: 'var(--text3)', fontSize: 12, padding: '4px 8px' }}>
               Sending…
             </div>
@@ -365,29 +593,80 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
           <div ref={bottomRef} />
         </div>
 
-        {/* Inline reply — active sessions only */}
-        {session.isActive && (
-          <form onSubmit={handleSend} style={{
-            padding: '10px 12px', borderTop: '1px solid var(--glass-border)',
-            display: 'flex', gap: 8, flexShrink: 0,
-          }}>
-            <input
-              value={inputText}
-              onChange={e => setInputText(e.target.value)}
-              placeholder="Continue conversation…"
-              className="glass-input"
-              disabled={sending}
-              style={{ flex: 1, fontSize: 13, padding: '8px 12px', borderRadius: 10 }}
-            />
-            <button
-              type="submit"
-              className="glass-btn"
-              disabled={!inputText.trim() || sending}
-              style={{ padding: '8px 14px', fontSize: 15 }}
-            >
-              ↵
+        {/* Past sessions in same project */}
+        {siblings.length > 0 && (
+          <div style={{ borderTop: '1px solid var(--glass-border)', flexShrink: 0 }}>
+            <button onClick={() => setSiblingsOpen(o => !o)} style={{
+              all: 'unset', cursor: 'pointer', display: 'flex', width: '100%',
+              padding: '8px 14px', fontSize: 11, color: 'var(--text3)',
+              alignItems: 'center', gap: 6,
+            }}>
+              <span style={{ transform: siblingsOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+              Other sessions in this project ({siblings.length})
             </button>
-          </form>
+            {siblingsOpen && (
+              <div style={{ maxHeight: 140, overflowY: 'auto', padding: '0 8px 8px' }}>
+                {siblings.map(s => {
+                  const enc = btoa(unescape(encodeURIComponent(s.filepath)))
+                    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+                  return (
+                    <Link key={s.sessionId} href={`/session?f=${enc}`} onClick={onClose}
+                      style={{
+                        display: 'block', padding: '6px 8px', borderRadius: 6,
+                        textDecoration: 'none', fontSize: 12, color: 'var(--text)',
+                        background: 'rgba(255,255,255,0.02)',
+                        marginBottom: 4,
+                      }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {s.firstPrompt && s.firstPrompt !== '(no prompt)'
+                            ? s.firstPrompt.slice(0, 60)
+                            : s.sessionId.slice(0, 8) + '…'}
+                        </span>
+                        <span style={{ color: s.isActive ? 'var(--green)' : 'var(--text3)', flexShrink: 0, fontSize: 10 }}>
+                          {s.isActive ? '● live' : relTime(s.mtime)}
+                        </span>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Reply form — works for both active and stopped (resumes via -r) */}
+        <form onSubmit={handleSend} style={{
+          padding: '10px 12px', borderTop: '1px solid var(--glass-border)',
+          display: 'flex', gap: 8, flexShrink: 0,
+          background: session.isActive ? undefined : 'rgba(255,255,255,0.02)',
+        }}>
+          <input
+            value={inputText}
+            onChange={e => setInputText(e.target.value)}
+            placeholder={inputPlaceholder}
+            className="glass-input"
+            disabled={sending}
+            style={{ flex: 1, fontSize: 13, padding: '8px 12px', borderRadius: 10 }}
+          />
+          <button type="submit" className="glass-btn"
+            disabled={!inputText.trim() || sending}
+            style={{ padding: '8px 14px', fontSize: 15 }}
+            title={session.isActive ? 'Send' : 'Resume session'}
+          >
+            {session.isActive ? '↵' : '▶'}
+          </button>
+        </form>
+
+        {/* Start fresh — only for stopped sessions */}
+        {!session.isActive && (
+          <button onClick={handleStartFresh} style={{
+            all: 'unset', cursor: 'pointer', textAlign: 'center',
+            padding: '8px 14px', fontSize: 11, color: 'var(--text3)',
+            borderTop: '1px solid var(--glass-border)',
+          }}>
+            …or start a fresh session in this project →
+          </button>
         )}
       </div>
     </div>
@@ -399,6 +678,7 @@ export default function TowerView() {
   const [sessions, setSessions] = useState<RecentSession[]>([])
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({})
   const [selected, setSelected] = useState<RecentSession | null>(null)
+  const [brainOpen, setBrainOpen] = useState(false)
   const [cmdCol, setCmdCol] = useState(COL.IDLE)
   const prevActive = useRef<Set<string>>(new Set())
   const recentlyDone = useRef<Map<string, number>>(new Map())
@@ -449,7 +729,6 @@ export default function TowerView() {
     return () => clearInterval(iv)
   }, [poll])
 
-  // Sort: working/done/signal first, then idle by recency
   const sorted = [...sessions].sort((a, b) => {
     const order = { working: 0, done: 1, signal: 1, idle: 2 }
     const sa = order[agentStates[a.sessionId] ?? 'idle']
@@ -465,27 +744,23 @@ export default function TowerView() {
 
   return (
     <div style={{ minHeight: '100vh', position: 'relative' }}>
-
-      {/* ── Full-page fixed background ─────────────────────────────── */}
+      {/* Background */}
       <div style={{
         position: 'fixed', inset: 0, zIndex: 0,
         backgroundImage: "url('/sprites/tower-bg.png')",
         backgroundSize: 'cover', backgroundPosition: 'center top',
         imageRendering: 'pixelated', opacity: 0.38,
       }} />
-      {/* Vignette — darkens edges for readability */}
       <div style={{
         position: 'fixed', inset: 0, zIndex: 0,
         background: 'radial-gradient(ellipse 120% 100% at 50% 0%, transparent 40%, rgba(8,12,20,0.6) 100%)',
         pointerEvents: 'none',
       }} />
 
-      {/* ── Content ───────────────────────────────────────────────── */}
       <div style={{ position: 'relative', zIndex: 1, minHeight: '100vh' }}>
 
-        {/* Commander section */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 36, gap: 0 }}>
-          {/* Battlements */}
+        {/* Commander section — clickable to open Brain modal */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 36 }}>
           <div style={{ display: 'flex', gap: 5, marginBottom: -2 }}>
             {[...Array(11)].map((_, i) => (
               <div key={i} style={{
@@ -498,39 +773,64 @@ export default function TowerView() {
           </div>
           <div style={{ width: 11 * 16 + 10 * 5, height: 5, background: 'var(--accent)', opacity: 0.7, borderRadius: '0 0 2px 2px' }} />
 
-          <div style={{
-            background: 'radial-gradient(circle, rgba(91,163,255,0.15) 0%, transparent 70%)',
-            border: '1px solid rgba(91,163,255,0.2)', borderRadius: '50%',
-            padding: 16, marginTop: 10,
-            boxShadow: '0 0 48px rgba(91,163,255,0.18)',
-          }}>
+          <button
+            onClick={() => setBrainOpen(true)}
+            style={{
+              all: 'unset', cursor: 'pointer',
+              background: 'radial-gradient(circle, rgba(91,163,255,0.18) 0%, transparent 70%)',
+              border: '1px solid rgba(91,163,255,0.25)', borderRadius: '50%',
+              padding: 16, marginTop: 10,
+              boxShadow: '0 0 48px rgba(91,163,255,0.22)',
+              transition: 'transform 0.15s, box-shadow 0.2s',
+            }}
+            onMouseEnter={e => {
+              const el = e.currentTarget as HTMLElement
+              el.style.transform = 'scale(1.08)'
+              el.style.boxShadow = '0 0 64px rgba(91,163,255,0.45)'
+            }}
+            onMouseLeave={e => {
+              const el = e.currentTarget as HTMLElement
+              el.style.transform = ''
+              el.style.boxShadow = '0 0 48px rgba(91,163,255,0.22)'
+            }}
+            title="Click to dispatch a task"
+            aria-label="Dispatch task to a project"
+          >
             <Sprite row={ROW.COMMANDER} col={cmdCol} sheet={sheet} size={100}
               animClass={cmdCol === COL.DONE ? 'tower-agent-done' : ''} />
-          </div>
+          </button>
 
           <div style={{ textAlign: 'center', marginTop: 14 }}>
             <h1 style={{ margin: 0, fontWeight: 800, fontSize: 26, letterSpacing: '-0.03em', color: 'var(--text)' }}>
               Agent Tower
             </h1>
-            <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 6, display: 'flex', gap: 14, justifyContent: 'center' }}>
+            <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 6, display: 'flex', gap: 14, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ color: workingCount > 0 ? 'var(--green)' : 'var(--text3)' }}>
                 {workingCount > 0 ? `● ${workingCount} working` : '○ all quiet'}
               </span>
               {sessions.length > 0 && <span style={{ color: 'var(--text3)' }}>{sessions.length} sessions</span>}
+              <button onClick={() => setBrainOpen(true)} style={{
+                all: 'unset', cursor: 'pointer',
+                fontSize: 11, color: 'var(--accent)',
+                padding: '3px 10px', borderRadius: 99,
+                border: '1px solid rgba(91,163,255,0.4)',
+                background: 'rgba(91,163,255,0.1)',
+              }}>
+                ⚡ Dispatch task
+              </button>
             </div>
           </div>
         </div>
 
-        {/* ── Field ──────────────────────────────────────────────────── */}
+        {/* Field */}
         <div style={{ maxWidth: 1100, margin: '32px auto 0', padding: '0 24px 48px' }}>
           {sorted.length === 0 ? (
             <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 14, padding: '80px 0' }}>
               <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.25 }}>🏰</div>
-              <div>No sessions found — run a Claude Code session to see agents here</div>
+              <div>No sessions found — click the Commander to dispatch your first task</div>
             </div>
           ) : (
             <>
-              {/* Legend */}
               <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap', fontSize: 11, color: 'var(--text3)' }}>
                 {(['working', 'done', 'signal', 'idle'] as AgentState[]).map(st => (
                   <span key={st} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -541,17 +841,13 @@ export default function TowerView() {
                     {STATE_LABEL[st]}
                   </span>
                 ))}
-                <span style={{ marginLeft: 'auto', opacity: 0.4 }}>click any agent to inspect</span>
+                <span style={{ marginLeft: 'auto', opacity: 0.4 }}>click any agent to inspect or chat</span>
               </div>
 
-              {/* Ground field container */}
               <div style={{
-                position: 'relative',
-                borderRadius: 16,
-                overflow: 'hidden',
+                position: 'relative', borderRadius: 16, overflow: 'hidden',
                 border: '1px solid rgba(255,255,255,0.06)',
               }}>
-                {/* Field background — pixel-art ground if loaded, else CSS fallback */}
                 <div style={{
                   position: 'absolute', inset: 0,
                   backgroundImage: fieldBgLoaded ? "url('/sprites/field-bg.png')" : undefined,
@@ -562,32 +858,27 @@ export default function TowerView() {
                     : undefined,
                   opacity: 0.9,
                 }} />
-                {/* Ground line glow */}
                 <div style={{
                   position: 'absolute', bottom: 0, left: 0, right: 0, height: '35%',
                   background: 'linear-gradient(to top, rgba(20,60,25,0.35) 0%, transparent 100%)',
                   pointerEvents: 'none',
                 }} />
-                {/* Preload the field bg image */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/sprites/field-bg.png" alt="" style={{ display: 'none' }}
                   onLoad={() => setFieldBgLoaded(true)} />
 
-                {/* Agent grid — CSS grid so agents sit on a proper ground plane */}
                 <div style={{
-                  position: 'relative', zIndex: 1,
-                  display: 'grid',
+                  position: 'relative', zIndex: 1, display: 'grid',
                   gridTemplateColumns: `repeat(${totalCols}, 1fr)`,
-                  gap: '12px 8px',
-                  padding: '32px 24px 40px',
+                  gap: '12px 8px', padding: '32px 24px 40px',
                   alignItems: 'end',
+                  minHeight: fieldHeight,
                 }}>
                   {sorted.map(session => {
                     const state = agentStates[session.sessionId] ?? 'idle'
                     return (
                       <div key={session.sessionId} style={{
                         display: 'flex', justifyContent: 'center',
-                        // Subtle vertical variation for depth
                         marginBottom: hashId(session.sessionId) % 16,
                       }}>
                         <AgentCard
@@ -606,8 +897,8 @@ export default function TowerView() {
         </div>
       </div>
 
-      {/* ── Modal ──────────────────────────────────────────────────── */}
       {selected && <AgentModal session={selected} onClose={() => setSelected(null)} />}
+      {brainOpen && <BrainModal onClose={() => setBrainOpen(false)} onDispatched={() => poll()} />}
     </div>
   )
 }

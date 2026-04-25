@@ -278,6 +278,39 @@ export interface RecentSession {
   firstPrompt: string
   mtime: number
   isActive: boolean
+  currentActivity: string | null  // last tool name, "thinking", "writing", or null
+}
+
+/** Read tail of JSONL and return what the agent is currently doing.
+ * Returns: tool name (e.g. "Bash"), "thinking", "writing", or null. */
+function readCurrentActivity(filepath: string): string | null {
+  try {
+    const stat = fs.statSync(filepath)
+    if (stat.size === 0) return null
+    const readSize = Math.min(16384, stat.size)
+    const fd = fs.openSync(filepath, 'r')
+    const buf = Buffer.alloc(readSize)
+    fs.readSync(fd, buf, 0, readSize, stat.size - readSize)
+    fs.closeSync(fd)
+
+    const lines = buf.toString('utf-8').split('\n').filter(l => l.trim())
+    if (lines.length === 0) return null
+
+    const lastLine = lines[lines.length - 1]
+    const obj = JSON.parse(lastLine) as RawJSONLLine
+    if (!obj || (obj.type !== 'user' && obj.type !== 'assistant')) return null
+
+    if (obj.type === 'user') return 'thinking'
+    const content = obj.message?.content
+    if (!Array.isArray(content) || content.length === 0) return null
+    const last = content[content.length - 1] as RawContentBlock
+    if (last?.type === 'tool_use') return last.name ?? 'tool'
+    if (last?.type === 'thinking') return 'thinking'
+    if (last?.type === 'text') return 'writing'
+    return null
+  } catch {
+    return null
+  }
 }
 
 export function getRecentSessions(limit = 20): RecentSession[] {
@@ -326,6 +359,7 @@ export function getRecentSessions(limit = 20): RecentSession[] {
         firstPrompt,
         mtime,
         isActive,
+        currentActivity: isActive ? readCurrentActivity(filepath) : null,
       })
     }
   }
