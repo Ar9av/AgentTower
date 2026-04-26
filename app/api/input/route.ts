@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
   const authErr = await requireAuth(req)
   if (authErr) return authErr
 
-  const { session_id, prompt } = await req.json().catch(() => ({}))
+  const { session_id, prompt, model } = await req.json().catch(() => ({}))
   if (!session_id || !prompt) {
     return NextResponse.json({ error: "session_id and prompt required" }, { status: 400 })
   }
@@ -17,10 +17,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "session not found" }, { status: 404 })
   }
 
-  const proc = spawnClaude(
-    ["--dangerously-skip-permissions", "-r", session_id, "-p", prompt],
-    { cwd, detached: true, stdio: "ignore" }
-  )
+  const args = ["--dangerously-skip-permissions", "-r", session_id]
+  if (typeof model === "string" && model.trim()) args.push("--model", model.trim())
+  args.push("-p", prompt)
+
+  const proc = spawnClaude(args, { cwd, detached: true, stdio: "ignore" })
   proc.unref()
 
   return NextResponse.json({ ok: true, cwd, pid: proc.pid })

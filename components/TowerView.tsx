@@ -30,6 +30,28 @@ const STATE_LABEL: Record<AgentState, string> = {
   idle: 'idle', working: 'working…', done: 'done!', signal: 'signaling',
 }
 
+// Models — passed as --model <alias> to the claude CLI
+const MODELS: Array<{ value: string; label: string; emoji: string }> = [
+  { value: 'sonnet', label: 'Sonnet 4.6', emoji: '⚡' },
+  { value: 'opus',   label: 'Opus 4.7',   emoji: '🧠' },
+  { value: 'haiku',  label: 'Haiku 4.5',  emoji: '🪶' },
+]
+const MODEL_KEY = 'tower:default-model'
+
+function useDefaultModel(): readonly [string, (m: string) => void] {
+  const [model, setModelState] = useState<string>('sonnet')
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const saved = localStorage.getItem(MODEL_KEY)
+    if (saved && MODELS.some(m => m.value === saved)) setModelState(saved)
+  }, [])
+  const setModel = useCallback((m: string) => {
+    setModelState(m)
+    if (typeof window !== 'undefined') localStorage.setItem(MODEL_KEY, m)
+  }, [])
+  return [model, setModel] as const
+}
+
 // Tool / activity → emoji badge
 const TOOL_EMOJI: Record<string, string> = {
   thinking: '💭',
@@ -287,6 +309,7 @@ function BrainModal({ onClose, onDispatched }: { onClose: () => void; onDispatch
   const [task, setTask] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [model, setModel] = useDefaultModel()
   const sheet = useProcessedSheet('/sprites/agents.png')
 
   useEffect(() => {
@@ -309,7 +332,7 @@ function BrainModal({ onClose, onDispatched }: { onClose: () => void; onDispatch
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_path: selectedPath, prompt: task.trim() }),
+        body: JSON.stringify({ project_path: selectedPath, prompt: task.trim(), model }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -383,6 +406,35 @@ function BrainModal({ onClose, onDispatched }: { onClose: () => void; onDispatch
             </select>
           </label>
 
+          {/* Model picker */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Model
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {MODELS.map(m => {
+                const active = model === m.value
+                return (
+                  <button key={m.value} type="button" onClick={() => setModel(m.value)}
+                    disabled={sending}
+                    style={{
+                      all: 'unset', cursor: sending ? 'default' : 'pointer',
+                      flex: 1, textAlign: 'center',
+                      padding: '8px 10px', borderRadius: 10,
+                      border: `1px solid ${active ? 'rgba(91,163,255,0.5)' : 'var(--glass-border)'}`,
+                      background: active ? 'rgba(91,163,255,0.18)' : 'var(--glass-bg)',
+                      color: active ? 'var(--text)' : 'var(--text2)',
+                      fontSize: 12, fontWeight: active ? 700 : 500,
+                      transition: 'background 0.15s, border-color 0.15s',
+                    }}>
+                    <div style={{ fontSize: 16, marginBottom: 2 }}>{m.emoji}</div>
+                    {m.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           {/* Task input */}
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -433,6 +485,7 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
   const [sending, setSending] = useState(false)
   const [siblings, setSiblings] = useState<SessionInfo[]>([])
   const [siblingsOpen, setSiblingsOpen] = useState(false)
+  const [model, setModel] = useDefaultModel()
   const bottomRef = useRef<HTMLDivElement>(null)
   const sheet = useProcessedSheet('/sprites/agents.png')
   const hue = sessionHue(session.sessionId)
@@ -482,7 +535,7 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
       await fetch('/api/input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: session.sessionId, prompt }),
+        body: JSON.stringify({ session_id: session.sessionId, prompt, model }),
       })
       setTimeout(fetchMessages, 1800)
     } finally { setSending(false) }
@@ -638,24 +691,48 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
         {/* Reply form — works for both active and stopped (resumes via -r) */}
         <form onSubmit={handleSend} style={{
           padding: '10px 12px', borderTop: '1px solid var(--glass-border)',
-          display: 'flex', gap: 8, flexShrink: 0,
+          display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0,
           background: session.isActive ? undefined : 'rgba(255,255,255,0.02)',
         }}>
-          <input
-            value={inputText}
-            onChange={e => setInputText(e.target.value)}
-            placeholder={inputPlaceholder}
-            className="glass-input"
-            disabled={sending}
-            style={{ flex: 1, fontSize: 13, padding: '8px 12px', borderRadius: 10 }}
-          />
-          <button type="submit" className="glass-btn"
-            disabled={!inputText.trim() || sending}
-            style={{ padding: '8px 14px', fontSize: 15 }}
-            title={session.isActive ? 'Send' : 'Resume session'}
-          >
-            {session.isActive ? '↵' : '▶'}
-          </button>
+          {/* Model picker — compact pill row */}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: 'var(--text3)', marginRight: 4 }}>model:</span>
+            {MODELS.map(m => {
+              const active = model === m.value
+              return (
+                <button key={m.value} type="button" onClick={() => setModel(m.value)}
+                  disabled={sending}
+                  title={m.label}
+                  style={{
+                    all: 'unset', cursor: sending ? 'default' : 'pointer',
+                    padding: '2px 8px', borderRadius: 99,
+                    border: `1px solid ${active ? 'rgba(91,163,255,0.5)' : 'transparent'}`,
+                    background: active ? 'rgba(91,163,255,0.18)' : 'transparent',
+                    color: active ? 'var(--text)' : 'var(--text3)',
+                    fontSize: 11, fontWeight: active ? 700 : 500,
+                  }}>
+                  {m.emoji} {m.label.replace(/ \d.+$/, '')}
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              value={inputText}
+              onChange={e => setInputText(e.target.value)}
+              placeholder={inputPlaceholder}
+              className="glass-input"
+              disabled={sending}
+              style={{ flex: 1, fontSize: 13, padding: '8px 12px', borderRadius: 10 }}
+            />
+            <button type="submit" className="glass-btn"
+              disabled={!inputText.trim() || sending}
+              style={{ padding: '8px 14px', fontSize: 15 }}
+              title={session.isActive ? 'Send' : 'Resume session'}
+            >
+              {session.isActive ? '↵' : '▶'}
+            </button>
+          </div>
         </form>
 
         {/* Start fresh — only for stopped sessions */}
