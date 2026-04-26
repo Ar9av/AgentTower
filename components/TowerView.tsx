@@ -760,7 +760,6 @@ export default function TowerView() {
   const prevActive = useRef<Set<string>>(new Set())
   const recentlyDone = useRef<Map<string, number>>(new Map())
   const sheet = useProcessedSheet('/sprites/agents.png')
-  const [fieldBgLoaded, setFieldBgLoaded] = useState(false)
 
   const poll = useCallback(async () => {
     try {
@@ -922,52 +921,29 @@ export default function TowerView() {
               </div>
 
               <div style={{
-                position: 'relative', borderRadius: 16, overflow: 'hidden',
-                border: '1px solid rgba(255,255,255,0.06)',
+                position: 'relative',
+                display: 'grid',
+                gridTemplateColumns: `repeat(${totalCols}, 1fr)`,
+                gap: '12px 8px', padding: '32px 24px 40px',
+                alignItems: 'end',
+                minHeight: fieldHeight,
               }}>
-                <div style={{
-                  position: 'absolute', inset: 0,
-                  backgroundImage: fieldBgLoaded ? "url('/sprites/field-bg.png')" : undefined,
-                  backgroundSize: 'cover', backgroundPosition: 'center',
-                  imageRendering: 'pixelated',
-                  background: !fieldBgLoaded
-                    ? 'linear-gradient(to bottom, rgba(10,20,35,0.7) 0%, rgba(8,20,14,0.85) 100%)'
-                    : undefined,
-                  opacity: 0.9,
-                }} />
-                <div style={{
-                  position: 'absolute', bottom: 0, left: 0, right: 0, height: '35%',
-                  background: 'linear-gradient(to top, rgba(20,60,25,0.35) 0%, transparent 100%)',
-                  pointerEvents: 'none',
-                }} />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/sprites/field-bg.png" alt="" style={{ display: 'none' }}
-                  onLoad={() => setFieldBgLoaded(true)} />
-
-                <div style={{
-                  position: 'relative', zIndex: 1, display: 'grid',
-                  gridTemplateColumns: `repeat(${totalCols}, 1fr)`,
-                  gap: '12px 8px', padding: '32px 24px 40px',
-                  alignItems: 'end',
-                  minHeight: fieldHeight,
-                }}>
-                  {sorted.map(session => {
-                    const state = agentStates[session.sessionId] ?? 'idle'
-                    return (
-                      <div key={session.sessionId} style={{
-                        display: 'flex', justifyContent: 'center',
-                        marginBottom: hashId(session.sessionId) % 16,
-                      }}>
-                        <AgentCard
-                          session={session}
-                          state={state}
-                          sheet={sheet}
-                          onClick={() => setSelected(session)}
-                        />
-                      </div>
-                    )
-                  })}
-                </div>
+                {sorted.map(session => {
+                  const state = agentStates[session.sessionId] ?? 'idle'
+                  return (
+                    <div key={session.sessionId} style={{
+                      display: 'flex', justifyContent: 'center',
+                      marginBottom: hashId(session.sessionId) % 16,
+                    }}>
+                      <AgentCard
+                        session={session}
+                        state={state}
+                        sheet={sheet}
+                        onClick={() => setSelected(session)}
+                      />
+                    </div>
+                  )
+                })}
               </div>
             </>
           )}
