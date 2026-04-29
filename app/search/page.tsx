@@ -50,11 +50,36 @@ function SearchInner() {
     )
   }
 
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'hits'>('newest')
+
   // Group by session
   const bySession = results.reduce<Record<string, SearchResult[]>>((acc, r) => {
     ;(acc[r.sessionId] = acc[r.sessionId] ?? []).push(r)
     return acc
   }, {})
+
+  const sortedSessions = Object.entries(bySession).sort(([, a], [, b]) => {
+    if (sortBy === 'hits') return b.length - a.length
+    const diff = b[0].mtime - a[0].mtime
+    return sortBy === 'oldest' ? -diff : diff
+  })
+
+  function fmtDate(mtime: number) {
+    const d = new Date(mtime)
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const diffDays = Math.floor(diffMs / 86400000)
+    if (diffDays === 0) return 'today ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    if (diffDays === 1) return 'yesterday'
+    if (diffDays < 7) return `${diffDays}d ago`
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
+  }
+
+  const SORT_OPTS: { key: typeof sortBy; label: string }[] = [
+    { key: 'newest', label: 'Newest' },
+    { key: 'oldest', label: 'Oldest' },
+    { key: 'hits', label: 'Most hits' },
+  ]
 
   return (
     <>
@@ -78,13 +103,35 @@ function SearchInner() {
             }}
           />
           {query.length >= 2 && (
-            <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--text2)' }}>
-              {loading ? 'Searching…' : `${results.length} result${results.length !== 1 ? 's' : ''} across ${Object.keys(bySession).length} session${Object.keys(bySession).length !== 1 ? 's' : ''}`}
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--text2)' }}>
+                {loading ? 'Searching…' : `${results.length} result${results.length !== 1 ? 's' : ''} across ${sortedSessions.length} session${sortedSessions.length !== 1 ? 's' : ''}`}
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 12, color: 'var(--text2)' }}>Sort:</span>
+                {SORT_OPTS.map(opt => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setSortBy(opt.key)}
+                    style={{
+                      background: sortBy === opt.key ? 'var(--accent)' : 'var(--bg2)',
+                      color: sortBy === opt.key ? '#fff' : 'var(--text2)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 4,
+                      padding: '2px 8px',
+                      fontSize: 12,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 
-        {Object.entries(bySession).map(([sessionId, hits]) => {
+        {sortedSessions.map(([sessionId, hits]) => {
           const first = hits[0]
           return (
             <div key={sessionId} style={{ marginBottom: 24 }}>
@@ -96,6 +143,7 @@ function SearchInner() {
                   {first.decodedProjectPath.split('/').pop()} / {sessionId.slice(0, 8)}
                 </Link>
                 <span style={{ fontSize: 12, color: 'var(--text2)' }}>{first.decodedProjectPath}</span>
+                <span style={{ fontSize: 11, color: 'var(--text2)', marginLeft: 'auto' }}>{fmtDate(first.mtime)}</span>
               </div>
               {hits.map((r, i) => (
                 <Link
