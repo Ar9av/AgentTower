@@ -1,0 +1,13 @@
+{
+  "name": "daily-brief-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "morning": "node morning-brief.mjs",
+    "evening": "node evening-brief.mjs",
+    "daily-bot": "node daily-bot.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0"
+  }
+}

@@ -120,6 +120,16 @@ export default function Nav() {
             🏰 Tower
           </Link>
 
+          {/* Daily Brief */}
+          <Link
+            href="/daily-brief"
+            className="glass-btn hide-mobile"
+            style={{ padding: '6px 12px', minHeight: 36, fontSize: 13, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+            title="Daily Brief"
+          >
+            📋 Brief
+          </Link>
+
           {/* Integrations */}
           <Link
             href="/integrations"
