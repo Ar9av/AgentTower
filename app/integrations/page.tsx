@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getSessionToken, validateSession } from '@/lib/auth'
 import Nav from '@/components/Nav'
 import TelegramIntegration from '@/components/TelegramIntegration'
+import AntigravityIntegration from '@/components/AntigravityIntegration'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,7 @@ export default async function IntegrationsPage() {
         </div>
 
         <TelegramIntegration />
+        <AntigravityIntegration />
       </main>
     </>
   )

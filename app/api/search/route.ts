@@ -9,5 +9,8 @@ export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get('q') ?? ''
   if (q.length < 2) return NextResponse.json([])
 
-  return NextResponse.json(searchSessions(q))
+  const project = req.nextUrl.searchParams.get('project') ?? undefined
+  const regex = req.nextUrl.searchParams.get('regex') === '1'
+
+  return NextResponse.json(searchSessions(q, { projectDirName: project, regex }))
 }

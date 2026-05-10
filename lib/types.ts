@@ -131,6 +131,19 @@ export interface SearchResult {
   mtime: number
 }
 
+// ─── Antigravity integration ───────────────────────────────────────────────
+
+export interface AntigravityAgent {
+  id: string
+  name: string
+  status: 'running' | 'idle' | 'completed' | 'error'
+  model?: string
+  task?: string
+  startedAt: string
+  updatedAt: string
+  workspaceId?: string
+}
+
 // ─── API response shapes ───────────────────────────────────────────────────
 
 export interface ApiError {

@@ -1,8 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import type { ProjectInfo } from '@/lib/types'
+import type { ProjectInfo, AntigravityAgent } from '@/lib/types'
 import LiveTailDrawer from './LiveTailDrawer'
 
 interface Props {
@@ -22,6 +22,21 @@ export default function ProjectsView({ initialProjects }: Props) {
   const [showAdd, setShowAdd] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [tailing, setTailing] = useState<ProjectInfo | null>(null)
+  const [agAgents, setAgAgents] = useState<AntigravityAgent[]>([])
+
+  useEffect(() => {
+    async function fetchAgents() {
+      try {
+        const res = await fetch('/api/integrations/antigravity')
+        if (!res.ok) return
+        const d = await res.json() as { antigravity: { enabled: boolean }; agents: AntigravityAgent[] }
+        if (d.antigravity.enabled) setAgAgents(d.agents ?? [])
+      } catch {}
+    }
+    fetchAgents()
+    const t = setInterval(fetchAgents, 15000)
+    return () => clearInterval(t)
+  }, [])
 
   const activeCount = projects.filter(p => p.hasActive).length
 
@@ -77,6 +92,20 @@ export default function ProjectsView({ initialProjects }: Props) {
           + Add Project
         </button>
       </div>
+
+      {agAgents.length > 0 && (
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text2)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              🚀 Antigravity Agents
+            </h2>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>{agAgents.length} agent{agAgents.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))', gap: 10 }}>
+            {agAgents.map(a => <AgentCard key={a.id} agent={a} />)}
+          </div>
+        </div>
+      )}
 
       {projects.length === 0 ? (
         <div className="glass" style={{ borderRadius: 16, padding: '60px 40px', textAlign: 'center' }}>
@@ -330,4 +359,56 @@ function formatRelative(ms: number): string {
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
   return `${Math.floor(diff / 86_400_000)}d ago`
+}
+
+function agentStatusColor(s: string): string {
+  if (s === 'running') return 'var(--green, #3dd68c)'
+  if (s === 'completed') return 'var(--blue, #3b82f6)'
+  if (s === 'error') return 'var(--red, #ef4444)'
+  return 'var(--text3)'
+}
+
+function AgentCard({ agent }: { agent: AntigravityAgent }) {
+  const isRunning = agent.status === 'running'
+  let updatedMs = 0
+  try { updatedMs = new Date(agent.updatedAt).getTime() } catch {}
+
+  return (
+    <div
+      className="glass"
+      style={{
+        borderRadius: 12,
+        padding: '14px 16px',
+        borderColor: isRunning ? 'rgba(61,214,140,0.25)' : undefined,
+        boxShadow: isRunning
+          ? 'inset 0 1px 0 rgba(255,255,255,0.1), 0 0 0 1px rgba(61,214,140,0.1)'
+          : undefined,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        {isRunning && <span className="dot-active" />}
+        <span style={{
+          fontSize: 13, fontWeight: 600, color: 'var(--text)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+        }}>
+          {agent.name}
+        </span>
+        <span style={{ fontSize: 11, color: agentStatusColor(agent.status), fontWeight: 600 }}>
+          {agent.status}
+        </span>
+      </div>
+      {agent.task && (
+        <p style={{
+          margin: '0 0 8px', fontSize: 11, color: 'var(--text2)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {agent.task}
+        </p>
+      )}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {agent.model && <span className="chip">{agent.model}</span>}
+        {updatedMs > 0 && <span className="chip">{formatRelative(updatedMs)}</span>}
+      </div>
+    </div>
+  )
 }

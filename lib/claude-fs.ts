@@ -547,17 +547,37 @@ export function listSessions(projectDirName: string): SessionInfo[] {
 
 // ─── Search ────────────────────────────────────────────────────────────────
 
-export function searchSessions(query: string): SearchResult[] {
+export function searchSessions(
+  query: string,
+  opts: { projectDirName?: string; regex?: boolean } = {}
+): SearchResult[] {
   const projectsDir = getProjectsDir()
-  const claudeDir = getClaudeDir()
   const results: SearchResult[] = []
-  const lowerQuery = query.toLowerCase()
+
+  // Build matcher
+  let re: RegExp | null = null
+  let matcher: (text: string) => boolean
+  if (opts.regex) {
+    try {
+      re = new RegExp(query, 'i')
+      matcher = (text) => re!.test(text)
+    } catch {
+      return [] // invalid regex
+    }
+  } else {
+    const lowerQuery = query.toLowerCase()
+    matcher = (text) => text.toLowerCase().includes(lowerQuery)
+  }
 
   let projectDirs: string[]
   try {
     projectDirs = fs.readdirSync(projectsDir)
   } catch {
     return []
+  }
+
+  if (opts.projectDirName) {
+    projectDirs = projectDirs.filter(d => d === opts.projectDirName)
   }
 
   for (const dirName of projectDirs) {
@@ -589,7 +609,7 @@ export function searchSessions(query: string): SearchResult[] {
       for (let i = 0; i < lines.length; i++) {
         if (sessionHits >= 5) break
         const line = lines[i]
-        if (!line.toLowerCase().includes(lowerQuery)) continue
+        if (!matcher(line)) continue
 
         // Try to extract a human-readable snippet
         let context = line
@@ -603,10 +623,18 @@ export function searchSessions(query: string): SearchResult[] {
           // keep raw line
         }
 
-        // Trim context
-        const idx = context.toLowerCase().indexOf(lowerQuery)
-        const start = Math.max(0, idx - 60)
-        const end = Math.min(context.length, idx + query.length + 60)
+        // Trim context around the match
+        let matchIdx = 0
+        let matchLen = query.length
+        if (re) {
+          re.lastIndex = 0
+          const m = re.exec(context)
+          if (m) { matchIdx = m.index; matchLen = m[0].length }
+        } else {
+          matchIdx = context.toLowerCase().indexOf(query.toLowerCase())
+        }
+        const start = Math.max(0, matchIdx - 60)
+        const end = Math.min(context.length, matchIdx + matchLen + 60)
         context = (start > 0 ? '…' : '') + context.slice(start, end) + (end < context.length ? '…' : '')
 
         results.push({

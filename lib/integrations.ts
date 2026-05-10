@@ -3,6 +3,7 @@ import path from 'path'
 import os from 'os'
 import { execSync } from 'child_process'
 import { getClaudeDir } from './claude-fs'
+import type { AntigravityAgent } from './types'
 
 const CONFIG_PATH = path.join(os.homedir(), '.claude', 'agenttower-integrations.json')
 const AUDIT_PATH  = path.join(os.homedir(), '.claude', 'agenttower-audit.jsonl')
@@ -14,12 +15,21 @@ export interface TelegramConfig {
   projectsDir?: string       // default cwd for new tasks
 }
 
+export interface AntigravityConfig {
+  enabled: boolean
+  apiKey?: string
+  workspaceId?: string
+  apiBaseUrl?: string        // defaults to https://api.antigravity.dev
+}
+
 export interface IntegrationsConfig {
   telegram: TelegramConfig
+  antigravity: AntigravityConfig
 }
 
 const DEFAULT_CONFIG: IntegrationsConfig = {
   telegram: { enabled: false, allowedChatIds: [] },
+  antigravity: { enabled: false },
 }
 
 export function loadIntegrations(): IntegrationsConfig {
@@ -28,10 +38,26 @@ export function loadIntegrations(): IntegrationsConfig {
     const parsed = JSON.parse(raw) as Partial<IntegrationsConfig>
     return {
       telegram: { ...DEFAULT_CONFIG.telegram, ...(parsed.telegram ?? {}) },
+      antigravity: { ...DEFAULT_CONFIG.antigravity, ...(parsed.antigravity ?? {}) },
     }
   } catch {
     return DEFAULT_CONFIG
   }
+}
+
+export async function fetchAntigravityAgents(cfg: AntigravityConfig): Promise<AntigravityAgent[]> {
+  if (!cfg.enabled || !cfg.apiKey) return []
+  const base = (cfg.apiBaseUrl ?? 'https://api.antigravity.dev').replace(/\/$/, '')
+  const url = cfg.workspaceId
+    ? `${base}/v1/agents?workspace_id=${encodeURIComponent(cfg.workspaceId)}`
+    : `${base}/v1/agents`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${cfg.apiKey}` },
+    signal: AbortSignal.timeout(5000),
+  })
+  if (!res.ok) throw new Error(`Antigravity API: HTTP ${res.status}`)
+  const data = await res.json() as { agents?: AntigravityAgent[] } | AntigravityAgent[]
+  return (Array.isArray(data) ? data : (data.agents ?? [])) as AntigravityAgent[]
 }
 
 export function saveIntegrations(cfg: IntegrationsConfig): void {
