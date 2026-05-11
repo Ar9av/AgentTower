@@ -93,13 +93,25 @@ export default async function ProjectPage({ searchParams }: Props) {
   )
 }
 
+function activityLabel(processState: string, currentActivity?: string | null): string {
+  if (processState === 'paused') return 'Paused'
+  if (processState !== 'running') return 'Finished'
+  if (!currentActivity) return 'Running'
+  if (currentActivity === 'thinking') return 'Thinking…'
+  if (currentActivity === 'writing') return 'Writing…'
+  return `${currentActivity}…`
+}
+
+function formatCost(usd: number): string {
+  if (usd < 0.001) return '<$0.001'
+  if (usd < 0.01)  return `$${usd.toFixed(3)}`
+  return `$${usd.toFixed(2)}`
+}
+
 function SessionRow({ session: s }: { session: ReturnType<typeof listSessions>[0] }) {
   const chipClass =
     s.processState === 'running' ? 'chip chip-green' :
     s.processState === 'paused'  ? 'chip chip-yellow' : 'chip'
-  const stateLabel =
-    s.processState === 'running' ? 'Running' :
-    s.processState === 'paused'  ? 'Paused'  : 'Finished'
 
   return (
     <div className="glass" style={{
@@ -128,9 +140,16 @@ function SessionRow({ session: s }: { session: ReturnType<typeof listSessions>[0
           {s.firstPrompt}
         </Link>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className={chipClass}>{stateLabel}</span>
+          <span className={chipClass}>{activityLabel(s.processState, s.currentActivity)}</span>
           <span className="chip">{s.messageCount} msg{s.messageCount !== 1 ? 's' : ''}</span>
-          {s.meta?.input_tokens && <span className="chip">{s.meta.input_tokens.toLocaleString()} tok</span>}
+          {s.estimatedCostUsd != null && s.estimatedCostUsd > 0 && (
+            <span className="chip" title="Estimated cost">{formatCost(s.estimatedCostUsd)}</span>
+          )}
+          {s.gitBranch && (
+            <span className="chip" style={{ fontFamily: 'ui-monospace, monospace' }} title="Git branch">
+              ⎇ {s.gitBranch}
+            </span>
+          )}
           <span className="chip">{formatRelative(s.mtime)}</span>
           <span className="chip" style={{ fontFamily: 'ui-monospace, monospace' }}>{s.sessionId.slice(0, 8)}</span>
         </div>

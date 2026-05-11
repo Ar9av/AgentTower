@@ -96,6 +96,9 @@ export interface SessionInfo {
   processState: 'running' | 'paused' | 'dead' | 'unknown'
   isActive: boolean
   meta: SessionMeta | null
+  gitBranch?: string
+  estimatedCostUsd?: number
+  currentActivity?: string | null
 }
 
 // ─── Paginated session response ────────────────────────────────────────────

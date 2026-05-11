@@ -483,6 +483,35 @@ export function discoverProjects(): ProjectInfo[] {
   return projects
 }
 
+// ─── Cost estimation ────────────────────────────────────────────────────────
+
+const MODEL_PRICING: Record<string, { input: number; output: number; cacheRead: number }> = {
+  haiku:   { input: 0.80, output: 4.00, cacheRead: 0.08 },
+  opus:    { input: 15.0, output: 75.0, cacheRead: 1.50 },
+  sonnet:  { input: 3.00, output: 15.0, cacheRead: 0.30 },
+}
+
+function getModelPricing(model?: string) {
+  if (!model) return MODEL_PRICING.sonnet
+  const m = model.toLowerCase()
+  if (m.includes('haiku')) return MODEL_PRICING.haiku
+  if (m.includes('opus'))  return MODEL_PRICING.opus
+  return MODEL_PRICING.sonnet
+}
+
+function computeSessionCost(messages: ParsedMessage[]): number {
+  let total = 0
+  for (const m of messages) {
+    if (!m.usage) continue
+    const p = getModelPricing(m.model)
+    total +=
+      (m.usage.input_tokens / 1_000_000) * p.input +
+      (m.usage.output_tokens / 1_000_000) * p.output +
+      ((m.usage.cache_read_input_tokens ?? 0) / 1_000_000) * p.cacheRead
+  }
+  return total
+}
+
 // ─── Session listing ────────────────────────────────────────────────────────
 
 export function listSessions(projectDirName: string): SessionInfo[] {
@@ -525,6 +554,9 @@ export function listSessions(projectDirName: string): SessionInfo[] {
     }
 
     const isActive = now - stat.mtimeMs < activeThreshold * 1000
+    const gitBranch = messages.find(m => m.gitBranch)?.gitBranch
+    const estimatedCostUsd = computeSessionCost(messages)
+    const currentActivity = processState === 'running' ? readCurrentActivity(filepath) : null
 
     sessions.push({
       sessionId,
@@ -538,6 +570,9 @@ export function listSessions(projectDirName: string): SessionInfo[] {
       processState,
       isActive,
       meta: loadSessionMeta(sessionId),
+      gitBranch,
+      estimatedCostUsd,
+      currentActivity,
     })
   }
 
