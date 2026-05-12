@@ -12,6 +12,8 @@ import {
 
 // Display size of one tile, in CSS px. Scene = SCENE_WIDTH * TILE_PX wide.
 const TILE_PX = 28
+const NATURAL_SCENE_W = SCENE_WIDTH * TILE_PX   // 504 px at full scale
+const NATURAL_SCENE_H = SCENE_HEIGHT * TILE_PX  // 840 px at full scale
 
 // ── Sprite sheet constants ─────────────────────────────────────────────────
 const CELL_PX = 288
@@ -45,6 +47,19 @@ const MODELS: Array<{ value: string; label: string; emoji: string }> = [
   { value: 'haiku',  label: 'Haiku 4.5',  emoji: '🪶' },
 ]
 const MODEL_KEY = 'tower:default-model'
+
+function useSceneScale(): number {
+  const [scale, setScale] = useState(1)
+  useEffect(() => {
+    function compute() {
+      setScale(Math.min(1, (window.innerWidth - 16) / NATURAL_SCENE_W))
+    }
+    compute()
+    window.addEventListener('resize', compute)
+    return () => window.removeEventListener('resize', compute)
+  }, [])
+  return scale
+}
 
 function useDefaultModel(): readonly [string, (m: string) => void] {
   const [model, setModelState] = useState<string>('sonnet')
@@ -449,14 +464,14 @@ function BrainModal({ onClose, onDispatched }: { onClose: () => void; onDispatch
   }
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 950,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
-    }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="glass-lg" style={{
-        width: '100%', maxWidth: 520, borderRadius: 18, overflow: 'hidden',
-        boxShadow: 'var(--shadow-lg)', margin: '0 16px',
+    <div
+      className="tower-modal-overlay"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 950,
+        background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+      }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="glass-lg tower-modal-inner" style={{
+        boxShadow: 'var(--shadow-lg)',
         animation: 'fadeIn 0.18s ease',
       }}>
         {/* Header */}
@@ -655,15 +670,16 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
     : 'Resume — type a message to wake this session'
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 900,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)',
-    }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="glass-lg" style={{
-        width: '100%', maxWidth: 540, maxHeight: '85vh',
-        display: 'flex', flexDirection: 'column', borderRadius: 18,
-        overflow: 'hidden', boxShadow: 'var(--shadow-lg)', margin: '0 16px',
+    <div
+      className="tower-modal-overlay"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 900,
+        background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)',
+      }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="glass-lg tower-modal-inner" style={{
+        maxHeight: '85vh',
+        display: 'flex', flexDirection: 'column',
+        boxShadow: 'var(--shadow-lg)',
         animation: 'fadeIn 0.18s ease',
       }}>
         {/* Header */}
@@ -861,6 +877,7 @@ export default function TowerView() {
   const recentlyDone = useRef<Map<string, number>>(new Map())
   const sheet = useProcessedSheet('/sprites/agents.png')
   const liftSheet = useProcessedSheet('/sprites/lift.png')
+  const sceneScale = useSceneScale()
 
   // Lift state machine
   const [liftFloor, setLiftFloor] = useState<Floor>('lounge')
@@ -1032,7 +1049,7 @@ export default function TowerView() {
       <div style={{ position: 'relative', zIndex: 1, minHeight: '100vh' }}>
 
         {/* Header — Commander floats above the building */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 28 }}>
+        <div className="tower-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 28 }}>
           <button
             onClick={() => setBrainOpen(true)}
             style={{
@@ -1060,7 +1077,7 @@ export default function TowerView() {
               animClass={cmdCol === COL.DONE ? 'tower-agent-done' : 'tower-agent-idle'} />
           </button>
 
-          <h1 style={{ margin: '12px 0 4px', fontWeight: 800, fontSize: 22, letterSpacing: '-0.03em', color: 'var(--text)' }}>
+          <h1 className="tower-title" style={{ margin: '12px 0 4px', fontWeight: 800, fontSize: 22, letterSpacing: '-0.03em', color: 'var(--text)' }}>
             Agent Tower
           </h1>
           <div style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -1081,7 +1098,7 @@ export default function TowerView() {
         </div>
 
         {/* Building stage */}
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 16px 60px', gap: 24, alignItems: 'flex-start' }}>
+        <div className="tower-stage">
 
           {/* Floor directory (left side) — desktop only */}
           <div className="hide-mobile" style={{
@@ -1105,12 +1122,13 @@ export default function TowerView() {
           </div>
 
           {/* The building — rendered by the world-engine Scene from a tilemap */}
+          {/* Outer wrapper sized to the scaled scene so flex layout reserves the right space */}
+          <div style={{ flexShrink: 0, width: NATURAL_SCENE_W * sceneScale, height: NATURAL_SCENE_H * sceneScale }}>
+          {/* Inner wrapper at natural size, CSS-scaled down on mobile */}
+          <div style={{ width: NATURAL_SCENE_W, height: NATURAL_SCENE_H, transform: `scale(${sceneScale})`, transformOrigin: 'top left' }}>
           <Scene
             spec={sceneSpec}
-            style={{
-              flexShrink: 0,
-              filter: 'drop-shadow(0 0 30px rgba(91,163,255,0.2))',
-            }}
+            style={{ filter: 'drop-shadow(0 0 30px rgba(91,163,255,0.2))' }}
           >
 
             {/* Empty state */}
@@ -1184,6 +1202,8 @@ export default function TowerView() {
               )
             })}
           </Scene>
+          </div>
+          </div>
 
           {/* Legend / activity panel (right side) — desktop only */}
           <div className="hide-mobile" style={{

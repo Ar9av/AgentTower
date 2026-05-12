@@ -400,3 +400,56 @@ textarea.glass-input { font-family: inherit; resize: none; }
 .tower-card-idle:focus-visible .tower-card-label {
   opacity: 1;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Tower building stage — responsive layout
+══════════════════════════════════════════════════════════════════ */
+.tower-stage {
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px 60px;
+  gap: 24px;
+  align-items: flex-start;
+}
+@media (max-width: 640px) {
+  .tower-stage {
+    padding: 12px 4px 40px;
+    gap: 0;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Tower modals — bottom-sheet on mobile
+══════════════════════════════════════════════════════════════════ */
+.tower-modal-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tower-modal-inner {
+  width: 100%;
+  max-width: 540px;
+  margin: 0 16px;
+  border-radius: 18px;
+  overflow: hidden;
+}
+@media (max-width: 640px) {
+  .tower-modal-overlay {
+    align-items: flex-end;
+  }
+  .tower-modal-inner {
+    margin: 0;
+    max-width: 100%;
+    border-radius: 18px 18px 0 0;
+    max-height: 90dvh;
+    overflow-y: auto;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Tower header — compact on mobile
+══════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .tower-header { padding-top: 16px !important; }
+  .tower-title  { font-size: 18px !important; }
+}

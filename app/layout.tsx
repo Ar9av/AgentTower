@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import ThemeProvider from '@/components/ThemeProvider'
 import SidebarProvider from '@/components/SidebarProvider'
@@ -7,6 +7,11 @@ import Sidebar from '@/components/Sidebar'
 export const metadata: Metadata = {
   title: 'AgentTower',
   description: 'Monitor, tail, and control Claude Code sessions',
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
