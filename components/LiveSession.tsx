@@ -15,6 +15,7 @@ interface Props {
   projectPath: string
   pid: number | null
   processState: ProcState
+  scrollTarget?: string
 }
 
 function lastRole(messages: ParsedMessage[]): 'user' | 'assistant' | null {
@@ -31,6 +32,7 @@ export default function LiveSession({
   projectPath,
   pid: initialPid,
   processState: initialProcState,
+  scrollTarget,
 }: Props) {
   // ── message state ─────────────────────────────────────────────────────────
   const [firstMessage, setFirstMessage]   = useState<ParsedMessage | null>(initialData.firstMessage)
@@ -55,6 +57,7 @@ export default function LiveSession({
 
   const [replyTimedOut, setReplyTimedOut]   = useState(false)
   const [continuationUrl, setContinuationUrl] = useState<string | null>(null)
+  const [forking, setForking]               = useState<string | null>(null)
   const router = useRouter()
 
   const bottomRef           = useRef<HTMLDivElement>(null)
@@ -78,6 +81,38 @@ export default function LiveSession({
     if (atBottomRef.current) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
   useEffect(() => { scrollToBottom() }, [messages])
+
+  // Scroll to deep-link target after messages render
+  useEffect(() => {
+    if (!scrollTarget) return
+    const timer = setTimeout(() => {
+      const el = document.getElementById(scrollTarget)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el.classList.add('msg-highlight')
+      }
+    }, 120)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollTarget, messages.length])
+
+  // ── Fork ──────────────────────────────────────────────────────────────────
+  async function handleFork(uuid: string) {
+    if (forking) return
+    setForking(uuid)
+    try {
+      const res = await fetch('/api/fork', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ f: encodedFilepath, uuid }),
+      })
+      if (!res.ok) return
+      const { encodedFilepath: newEnc } = await res.json()
+      router.push(`/session?f=${newEnc}`)
+    } finally {
+      setForking(null)
+    }
+  }
 
   // ── SSE tail ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -630,7 +665,17 @@ export default function LiveSession({
                   Original instruction
                 </span>
               </div>
+              <div id={firstMessage.uuid} className="msg-row">
               <MessageBlock message={firstMessage} encodedFilepath={encodedFilepath} toolResultMap={toolResultMap} />
+              <button
+                className="msg-fork-btn"
+                onClick={() => handleFork(firstMessage.uuid)}
+                disabled={!!forking}
+                title="Fork session from this message"
+              >
+                {forking === firstMessage.uuid ? '…' : '⑃ fork here'}
+              </button>
+              </div>
 
               {/* Load more / hidden count divider */}
               <div style={{
@@ -692,7 +737,21 @@ export default function LiveSession({
               <p>No messages yet</p>
             </div>
           ) : (
-            displayMessages.map(msg => <MessageBlock key={msg.uuid} message={msg} encodedFilepath={encodedFilepath} toolResultMap={toolResultMap} />)
+            displayMessages.map(msg => (
+              <div key={msg.uuid} id={msg.uuid} className="msg-row">
+                <MessageBlock message={msg} encodedFilepath={encodedFilepath} toolResultMap={toolResultMap} />
+                {!msg.uuid.startsWith('__optimistic__') && (
+                  <button
+                    className="msg-fork-btn"
+                    onClick={() => handleFork(msg.uuid)}
+                    disabled={!!forking}
+                    title="Fork session from this message"
+                  >
+                    {forking === msg.uuid ? '…' : '⑃ fork here'}
+                  </button>
+                )}
+              </div>
+            ))
           )}
 
           {/* Continuation session found — direct link */}

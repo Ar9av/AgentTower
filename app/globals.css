@@ -453,3 +453,58 @@ textarea.glass-input { font-family: inherit; resize: none; }
   .tower-header { padding-top: 16px !important; }
   .tower-title  { font-size: 18px !important; }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Message row — fork button (session view)
+══════════════════════════════════════════════════════════════════ */
+.msg-row { position: relative; }
+
+.msg-fork-btn {
+  position: absolute;
+  right: 0;
+  top: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 99px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--accent) 14%, var(--glass-bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+  white-space: nowrap;
+  line-height: 1.4;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.msg-row:hover .msg-fork-btn,
+.msg-row:focus-within .msg-fork-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* On touch screens always show it */
+@media (hover: none) {
+  .msg-fork-btn {
+    opacity: 1;
+    pointer-events: auto;
+    position: static;
+    display: inline-flex;
+    margin-top: 4px;
+    font-size: 10px;
+    padding: 2px 7px;
+  }
+}
+
+/* Highlight a deep-linked message */
+.msg-highlight {
+  border-radius: 12px;
+  animation: msg-flash 2s ease forwards;
+}
+@keyframes msg-flash {
+  0%   { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  100% { background: transparent; }
+}

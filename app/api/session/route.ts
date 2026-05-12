@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
 
   const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') ?? '50', 10), 200)
   const olderThan = req.nextUrl.searchParams.get('before') ?? undefined
+  const around = req.nextUrl.searchParams.get('around') ?? undefined
 
-  return NextResponse.json(parseJsonlFilePaginated(filepath, limit, olderThan))
+  return NextResponse.json(parseJsonlFilePaginated(filepath, limit, olderThan, around))
 }

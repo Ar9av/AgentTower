@@ -9,7 +9,7 @@ import LiveSession from '@/components/LiveSession'
 export const dynamic = 'force-dynamic'
 
 interface Props {
-  searchParams: Promise<{ f?: string }>
+  searchParams: Promise<{ f?: string; msg?: string }>
 }
 
 export default async function SessionPage({ searchParams }: Props) {
@@ -23,7 +23,8 @@ export default async function SessionPage({ searchParams }: Props) {
   const filepath = decodeB64(encoded)
   if (!safePath(filepath, getClaudeDir())) redirect('/projects')
 
-  const sessionData = parseJsonlFilePaginated(filepath, 50)
+  const scrollTarget = params.msg ?? undefined
+  const sessionData = parseJsonlFilePaginated(filepath, 50, undefined, scrollTarget)
   const sessionId = getSessionId(filepath)
   const running = scanClaudeSessions(getClaudeDir())
   const proc = running[sessionId]
@@ -43,6 +44,7 @@ export default async function SessionPage({ searchParams }: Props) {
         projectPath={projectPath}
         pid={pid}
         processState={processState}
+        scrollTarget={scrollTarget}
       />
     </>
   )

@@ -233,7 +233,7 @@ function SearchInner() {
               {hits.map((r, i) => (
                 <Link
                   key={i}
-                  href={`/session?f=${encodeFilepath(r.filepath)}`}
+                  href={`/session?f=${encodeFilepath(r.filepath)}${r.msgUuid ? `&msg=${r.msgUuid}` : ''}`}
                   style={{ textDecoration: 'none' }}
                 >
                   <div style={{

@@ -132,6 +132,7 @@ export interface SearchResult {
   context: string
   timestamp: string
   mtime: number
+  msgUuid: string
 }
 
 // ─── Antigravity integration ───────────────────────────────────────────────

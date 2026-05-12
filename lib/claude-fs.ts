@@ -207,7 +207,8 @@ export function parseJsonlFile(filepath: string): ParsedMessage[] {
 export function parseJsonlFilePaginated(
   filepath: string,
   limit = 50,
-  olderThanUuid?: string               // load the next page older than this uuid
+  olderThanUuid?: string,              // load the next page older than this uuid
+  aroundUuid?: string                  // initial load: center window around this message
 ): PaginatedSession {
   const all = parseJsonlFile(filepath).filter(m => !m.isMeta)
   const total = all.length
@@ -223,7 +224,19 @@ export function parseJsonlFilePaginated(
   let window: ParsedMessage[]
   let hasMore: boolean
 
-  if (!olderThanUuid) {
+  if (aroundUuid) {
+    // Deep-link load: find the target and show a window centered slightly after it
+    const targetIdx = all.findIndex(m => m.uuid === aroundUuid)
+    if (targetIdx === -1) {
+      window = all.slice(-limit)
+      hasMore = total > limit
+    } else {
+      const endIdx = Math.min(total, targetIdx + 20)
+      const startIdx = Math.max(0, endIdx - limit)
+      window = all.slice(startIdx, endIdx)
+      hasMore = startIdx > 0
+    }
+  } else if (!olderThanUuid) {
     // Initial load: last `limit` messages
     window = all.slice(-limit)
     hasMore = total > limit
@@ -672,6 +685,12 @@ export function searchSessions(
         const end = Math.min(context.length, matchIdx + matchLen + 60)
         context = (start > 0 ? '…' : '') + context.slice(start, end) + (end < context.length ? '…' : '')
 
+        let msgUuid = ''
+        try {
+          const parsed = JSON.parse(line)
+          if (typeof parsed.uuid === 'string') msgUuid = parsed.uuid
+        } catch { /* keep empty */ }
+
         results.push({
           filepath,
           sessionId,
@@ -681,6 +700,7 @@ export function searchSessions(
           context,
           timestamp: new Date(mtime).toISOString(),
           mtime,
+          msgUuid,
         })
         sessionHits++
       }
