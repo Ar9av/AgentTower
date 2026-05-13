@@ -1,0 +1,192 @@
+ ▐▛███▜▌   Claude Code v2.1.123
+▝▜█████▛▘  Sonnet 4.6 · Claude Max
+  ▘▘ ▝▝    ~/Documents/projects/agenttower
+
+❯ can we have search return date of the sesssion last update or smth and give   
+  sorting on search                                                             
+
+⏺ Let me explore the current search implementation to understand what we're
+  working with.
+
+⏺ Explore(Explore search implementation in agenttower)
+  ⎿  Done (10 tool uses · 38.9k tokens · 29s)
+  (ctrl+o to expand)
+
+⏺ Good, now let me read the relevant files.
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ The data is already there — mtime is on every SearchResult. I just need to
+  display it per session group and add client-side sort controls.
+
+⏺ Update(app/search/page.tsx)
+  ⎿  Added 52 lines, removed 4 lines
+      50      )
+      51    }
+      52  
+      53 +  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'h
+         +its'>('newest')                                                
+      54 +                                                               
+      55    // Group by session
+      56    const bySession = results.reduce<Record<string, SearchResult[
+          ]>>((acc, r) => {
+      57      ;(acc[r.sessionId] = acc[r.sessionId] ?? []).push(r)
+      58      return acc
+      59    }, {})
+      60  
+      61 +  const sortedSessions = Object.entries(bySession).sort(([, a],
+         + [, b]) => {                                                   
+      62 +    if (sortBy === 'hits') return b.length - a.length          
+      63 +    const diff = b[0].mtime - a[0].mtime                       
+      64 +    return sortBy === 'oldest' ? -diff : diff                  
+      65 +  })                                                           
+      66 +                                                               
+      67 +  function fmtDate(mtime: number) {                            
+      68 +    const d = new Date(mtime)                                  
+      69 +    const now = new Date()                                     
+      70 +    const diffMs = now.getTime() - d.getTime()                 
+      71 +    const diffDays = Math.floor(diffMs / 86400000)             
+      72 +    if (diffDays === 0) return 'today ' + d.toLocaleTimeString(
+         +[], { hour: '2-digit', minute: '2-digit' })                    
+      73 +    if (diffDays === 1) return 'yesterday'                     
+      74 +    if (diffDays < 7) return `${diffDays}d ago`                
+      75 +    return d.toLocaleDateString([], { month: 'short', day: 'num
+         +eric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' 
+         +: undefined })                                                 
+      76 +  }                                                            
+      77 +                                                               
+      78 +  const SORT_OPTS: { key: typeof sortBy; label: string }[] = [ 
+      79 +    { key: 'newest', label: 'Newest' },                        
+      80 +    { key: 'oldest', label: 'Oldest' },                        
+      81 +    { key: 'hits', label: 'Most hits' },                       
+      82 +  ]                                                            
+      83 +                                                               
+      84    return (
+      85      <>
+      86        <Nav />
+     ...
+      103              }}
+      104            />
+      105            {query.length >= 2 && (
+       81 -            <p style={{ margin: '8px 0 0', fontSize: 13, color
+          -: 'var(--text2)' }}>                                          
+       82 -              {loading ? 'Searching…' : `${results.length} res
+          -ult${results.length !== 1 ? 's' : ''} across ${Object.keys(byS
+          -ession).length} session${Object.keys(bySession).length !== 1 ?
+          - 's' : ''}`}                                                  
+       83 -            </p>                                              
+      106 +            <div style={{ display: 'flex', alignItems: 'center
+          +', justifyContent: 'space-between', marginTop: 8 }}>          
+      107 +              <p style={{ margin: 0, fontSize: 13, color: 'var
+          +(--text2)' }}>                                                
+      108 +                {loading ? 'Searching…' : `${results.length} r
+          +esult${results.length !== 1 ? 's' : ''} across ${sortedSession
+          +s.length} session${sortedSessions.length !== 1 ? 's' : ''}`}  
+      109 +              </p>                                            
+      110 +              <div style={{ display: 'flex', alignItems: 'cent
+          +er', gap: 4 }}>                                               
+      111 +                <span style={{ fontSize: 12, color: 'var(--tex
+          +t2)' }}>Sort:</span>                                          
+      112 +                {SORT_OPTS.map(opt => (                       
+      113 +                  <button                                     
+      114 +                    key={opt.key}                             
+      115 +                    onClick={() => setSortBy(opt.key)}        
+      116 +                    style={{                                  
+      117 +                      background: sortBy === opt.key ? 'var(--
+          +accent)' : 'var(--bg2)',                                      
+      118 +                      color: sortBy === opt.key ? '#fff' : 'va
+          +r(--text2)',                                                  
+      119 +                      border: '1px solid var(--border)',      
+      120 +                      borderRadius: 4,                        
+      121 +                      padding: '2px 8px',                     
+      122 +                      fontSize: 12,                           
+      123 +                      cursor: 'pointer',                      
+      124 +                    }}                                        
+      125 +                  >                                           
+      126 +                    {opt.label}                               
+      127 +                  </button>                                   
+      128 +                ))}                                           
+      129 +              </div>                                          
+      130 +            </div>                                            
+      131            )}
+      132          </div>
+      133  
+       87 -        {Object.entries(bySession).map(([sessionId, hits]) => 
+          -{                                                             
+      134 +        {sortedSessions.map(([sessionId, hits]) => {          
+      135            const first = hits[0]
+      136            return (
+      137              <div key={sessionId} style={{ marginBottom: 24 }}>
+     ...
+      143                    {first.decodedProjectPath.split('/').pop()} 
+           / {sessionId.slice(0, 8)}
+      144                  </Link>
+      145                  <span style={{ fontSize: 12, color: 'var(--tex
+           t2)' }}>{first.decodedProjectPath}</span>
+      146 +                <span style={{ fontSize: 11, color: 'var(--tex
+          +t2)', marginLeft: 'auto' }}>{fmtDate(first.mtime)}</span>     
+      147                </div>
+      148                {hits.map((r, i) => (
+      149                  <Link
+
+⏺ Now fix the closing of the Object.entries(bySession).map to use sortedSessions
+   — the map call is already updated in the edit above. Let me verify the rest
+  of the file still closes correctly.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ File looks correct. Let me do a quick type-check to make sure nothing is
+  broken.
+
+⏺ Bash(npx tsc --noEmit 2>&1 | head -30)
+  ⎿  (No output)
+
+⏺ No errors. Here's what was added to the search page:
+
+  - Last updated date shown on the right of each session header (smart
+  formatting: "today 2:34 PM", "yesterday", "3d ago", or "Apr 12")
+  - Sort controls — Newest (default), Oldest, Most hits — appear next to the
+  result count when there are results; sorting is client-side so it's instant
+
+✻ Cooked for 1m 28s
+
+※ recap: Added last-updated dates to search results and three sort options (Newest, Oldest, Most hits). No further action needed unless you want to test or extend the feature. (disable recaps in /config)
+
+! npm run dev                                                                   
+  ⎿  Command running in background with ID: beeudi7uz. Output is being written
+     to: /private/tmp/claude-501/-Users-ar9av-Documents-projects-agenttower/47b9
+     5004-1b9d-4ec3-9b1d-9b6e8e31581e/tasks/beeudi7uz.output
+
+※ recap: Added date display and sort controls to search results. Next: test the feature in the browser to confirm it works correctly. (disable recaps in /config)
+
+❯ push it to main                                                               
+
+⏺ Bash(git diff app/search/page.tsx)
+  ⎿  diff --git a/app/search/page.tsx b/app/search/page.tsx
+     index d5c9719..23460bf 100644
+     --- a/app/search/page.tsx
+     … +54 lines (ctrl+o to expand)
+
+⏺ Bash(git log --oneline -5)
+  ⎿  a04beb4 fix(tower): remove field-bg overlay that caused horizontal tin
+     t seam
+     09b1ada feat(tower): per-task model selector (Sonnet 4.6 default)
+     … +4 lines (ctrl+o to expand)
+
+⏺ Bash(git add app/search/page.tsx && git commit -m "$(cat <<'EOF'
+      feat(search): show session last-updated date and sort controls…)
+  ⎿  [main 34d366c] feat(search): show session last-updated date and sort c
+     ontrols
+      1 file changed, 52 insertions(+), 4 deletions(-)
+
+⏺ Bash(git push origin main)
+  ⎿  remote: This repository moved. Please use the new location:
+     remote:   https://github.com/Ar9av/AgentTower.git
+     To https://github.com/Ar9av/agenttower
+        a04beb4..34d366c  main -> main
+
+⏺ Pushed. Commit 34d366c is live on main.
+
+✻ Cogitated for 13s
+
+※ recap: Added date labels and sort controls (Newest/Oldest/Most hits) to search results. Pushed to main — nothing left to do. (disable recaps in /config)

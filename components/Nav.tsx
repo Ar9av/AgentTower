@@ -1,6 +1,6 @@
 'use client'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useTheme } from './ThemeProvider'
 import { useSidebar } from './SidebarProvider'
@@ -12,6 +12,27 @@ export default function Nav() {
   const { toggle: toggleSidebar } = useSidebar()
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        if (window.innerWidth >= 640) {
+          searchRef.current?.focus()
+          searchRef.current?.select()
+        } else {
+          setSearchOpen(true)
+        }
+      }
+      if (e.key === 'Escape') {
+        searchRef.current?.blur()
+        setSearchOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -89,10 +110,11 @@ export default function Nav() {
         {/* Desktop search */}
         <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 360 }} className="hide-mobile">
           <input
+            ref={searchRef}
             className="glass-input"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="⌕  Search sessions…"
+            placeholder="⌕  Search sessions… (⌘K)"
             style={{ fontSize: 13, padding: '6px 12px', borderRadius: 8, minHeight: 36 }}
           />
         </form>

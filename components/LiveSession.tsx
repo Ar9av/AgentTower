@@ -58,6 +58,7 @@ export default function LiveSession({
   const [replyTimedOut, setReplyTimedOut]   = useState(false)
   const [continuationUrl, setContinuationUrl] = useState<string | null>(null)
   const [forking, setForking]               = useState<string | null>(null)
+  const [sessionFilter, setSessionFilter]   = useState('')
   const router = useRouter()
 
   const bottomRef           = useRef<HTMLDivElement>(null)
@@ -551,14 +552,29 @@ export default function LiveSession({
   }, [firstMessage, messages])
 
   // Filter out user messages that contain only tool_result blocks (now shown inline)
-  const displayMessages = useMemo(() => messages.filter(msg => {
-    if (msg.type !== 'user') return true
-    const relevant = msg.content.filter(b =>
-      b.type === 'tool_result' || (b.type === 'text' && (b.text ?? '').trim().length > 0)
-    )
-    if (relevant.length === 0) return true
-    return !relevant.every(b => b.type === 'tool_result')
-  }), [messages])
+  const displayMessages = useMemo(() => {
+    const base = messages.filter(msg => {
+      if (msg.type !== 'user') return true
+      const relevant = msg.content.filter(b =>
+        b.type === 'tool_result' || (b.type === 'text' && (b.text ?? '').trim().length > 0)
+      )
+      if (relevant.length === 0) return true
+      return !relevant.every(b => b.type === 'tool_result')
+    })
+
+    const q = sessionFilter.trim().toLowerCase()
+    if (q.length < 2) return base
+
+    return base.filter(msg => {
+      const text = msg.content.map(b => {
+        if (b.type === 'text') return b.text ?? ''
+        if (b.type === 'tool_use') return `${b.tool_name ?? ''} ${JSON.stringify(b.tool_input ?? '')}`
+        if (b.type === 'tool_result') return b.tool_result?.map(r => r.text ?? '').join(' ') ?? ''
+        return ''
+      }).join(' ').toLowerCase()
+      return text.includes(q)
+    })
+  }, [messages, sessionFilter])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
@@ -598,6 +614,19 @@ export default function LiveSession({
           <span style={{ fontSize: 10, opacity: 0.7 }}>{copiedId ? '✓' : '⎘'}</span>
         </button>
 
+        {/* In-session filter */}
+        <input
+          value={sessionFilter}
+          onChange={e => setSessionFilter(e.target.value)}
+          placeholder="Filter…"
+          className="hide-mobile"
+          style={{
+            background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
+            borderRadius: 6, padding: '3px 10px', fontSize: 12, color: 'var(--text)',
+            outline: 'none', width: sessionFilter ? 160 : 80, transition: 'width 0.2s ease',
+          }}
+        />
+
         {/* Live dot */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span className={connected ? 'dot-live' : ''} style={!connected ? {
@@ -630,6 +659,11 @@ export default function LiveSession({
             <span className="hide-mobile" style={{ marginLeft: 4 }}>{exported ? 'Saved' : exporting ? 'Exporting…' : 'Export MD'}</span>
           </button>
           <span className="chip hide-mobile">{total} msgs</span>
+          {sessionFilter.trim().length >= 2 && (
+            <span className="chip hide-mobile" style={{ color: 'var(--yellow)' }}>
+              {displayMessages.length} match{displayMessages.length !== 1 ? 'es' : ''}
+            </span>
+          )}
           {isRunning && isThinking && <span className="chip chip-green"><span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span><span className="hide-mobile"> Thinking…</span></span>}
           {isRunning && !isThinking && <span className="chip chip-green">Running</span>}
           {isPaused && <span className="chip chip-yellow">Paused</span>}
