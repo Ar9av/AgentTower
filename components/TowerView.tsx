@@ -9,6 +9,7 @@ import {
   makeOfficeScene, slotsByGroup, FLOOR_SURFACE_Y, LIFT_X,
   SCENE_WIDTH, SCENE_HEIGHT,
 } from '@/lib/world/officeScene'
+import { useTheme } from './ThemeProvider'
 
 // Display size of one tile, in CSS px. Scene = SCENE_WIDTH * TILE_PX wide.
 const TILE_PX = 28
@@ -234,12 +235,13 @@ function Sprite({ row, col, hue = 0, size = DISP, sheet, animClass = '', style =
 }
 
 // Lift car — 3-frame sprite (closed/half/open). Positioned in tile coords.
-function LiftCar({ tileX, tileY, doorFrame, sheet, floorLabel, tilePx }: {
+function LiftCar({ tileX, tileY, doorFrame, sheet, floorLabel, tilePx, isLight }: {
   tileX: number; tileY: number
   doorFrame: 0 | 1 | 2
   sheet: string | null
   floorLabel: string
   tilePx: number
+  isLight?: boolean
 }) {
   // Lift car is ~1.6 tiles tall; size ~50 px at TILE_PX=28
   const SIZE = Math.round(tilePx * 1.8)
@@ -268,7 +270,8 @@ function LiftCar({ tileX, tileY, doorFrame, sheet, floorLabel, tilePx }: {
         transform: 'translateX(-50%)',
         fontSize: 9, fontWeight: 700,
         color: 'var(--yellow)',
-        background: 'rgba(0,0,0,0.7)',
+        background: isLight ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.7)',
+        border: isLight ? '1px solid rgba(0,0,0,0.12)' : 'none',
         padding: '1px 6px', borderRadius: 4,
         whiteSpace: 'nowrap',
         letterSpacing: '0.05em',
@@ -300,9 +303,10 @@ function AnimatedSprite({ row, colA, colB, hue, size, sheet, cycleMs = 700, anim
 }
 
 // ── Agent card ────────────────────────────────────────────────────────────
-function AgentCard({ session, state, sheet, onClick }: {
+function AgentCard({ session, state, sheet, onClick, isLight }: {
   session: RecentSession; state: AgentState
   sheet: string | null; onClick: () => void
+  isLight?: boolean
 }) {
   const hue = sessionHue(session.sessionId)
   const isIdle = state === 'idle'
@@ -398,7 +402,9 @@ function AgentCard({ session, state, sheet, onClick }: {
           <div style={{
             fontSize: 9, fontWeight: 700, color: 'var(--text)',
             whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis',
-            textShadow: '0 1px 3px rgba(0,0,0,1), 0 0 4px rgba(0,0,0,0.9)',
+            textShadow: isLight
+              ? '0 1px 2px rgba(255,255,255,0.9), 0 0 4px rgba(255,255,255,0.7)'
+              : '0 1px 3px rgba(0,0,0,1), 0 0 4px rgba(0,0,0,0.9)',
             padding: '0 2px',
           }}>
             {session.projectDisplayName}
@@ -406,7 +412,7 @@ function AgentCard({ session, state, sheet, onClick }: {
           {!isIdle && activityText && (
             <div style={{
               fontSize: 8, color: STATE_LABEL_COLOR[state],
-              textShadow: '0 1px 3px rgba(0,0,0,1)',
+              textShadow: isLight ? '0 1px 2px rgba(255,255,255,0.8)' : '0 1px 3px rgba(0,0,0,1)',
             }}>
               {activityText}
             </div>
@@ -868,6 +874,8 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
 
 // ── Main TowerView ─────────────────────────────────────────────────────────
 export default function TowerView() {
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
   const [sessions, setSessions] = useState<RecentSession[]>([])
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({})
   const [selected, setSelected] = useState<RecentSession | null>(null)
@@ -1021,29 +1029,42 @@ export default function TowerView() {
 
   return (
     <div style={{ minHeight: '100vh', position: 'relative' }}>
-      {/* Page background — atmospheric night gradient (no castle, since the tower IS the focal building) */}
+      {/* Page background */}
       <div style={{
         position: 'fixed', inset: 0, zIndex: 0,
-        background: `
-          radial-gradient(ellipse 60% 40% at 20% 30%, rgba(80,40,180,0.18) 0%, transparent 60%),
-          radial-gradient(ellipse 60% 40% at 80% 70%, rgba(40,80,180,0.16) 0%, transparent 60%),
-          linear-gradient(to bottom, #050810 0%, #0b1224 60%, #0e1834 100%)
-        `,
+        background: isLight
+          ? `
+            radial-gradient(ellipse 70% 50% at 15% 0%, rgba(255,210,120,0.35) 0%, transparent 55%),
+            radial-gradient(ellipse 60% 40% at 85% 5%, rgba(180,210,255,0.4) 0%, transparent 50%),
+            linear-gradient(to bottom, #a8d8f0 0%, #c5e6f5 35%, #d8eedc 65%, #e8f4ea 100%)
+          `
+          : `
+            radial-gradient(ellipse 60% 40% at 20% 30%, rgba(80,40,180,0.18) 0%, transparent 60%),
+            radial-gradient(ellipse 60% 40% at 80% 70%, rgba(40,80,180,0.16) 0%, transparent 60%),
+            linear-gradient(to bottom, #050810 0%, #0b1224 60%, #0e1834 100%)
+          `,
       }} />
-      {/* Star field — sparse pixel-art stars via CSS */}
+      {/* Star field (dark) / Cloud dots (light) */}
       <div style={{
-        position: 'fixed', inset: 0, zIndex: 0,
-        backgroundImage: `
-          radial-gradient(1.5px 1.5px at 17% 22%, white, transparent),
-          radial-gradient(1px 1px at 53% 11%, white, transparent),
-          radial-gradient(1.5px 1.5px at 87% 38%, white, transparent),
-          radial-gradient(1px 1px at 28% 64%, white, transparent),
-          radial-gradient(1px 1px at 72% 84%, white, transparent),
-          radial-gradient(2px 2px at 9% 88%, white, transparent),
-          radial-gradient(1.5px 1.5px at 95% 15%, white, transparent),
-          radial-gradient(1px 1px at 42% 47%, white, transparent)
-        `,
-        opacity: 0.55, pointerEvents: 'none',
+        position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
+        backgroundImage: isLight
+          ? `
+            radial-gradient(40px 18px at 20% 18%, rgba(255,255,255,0.7), transparent),
+            radial-gradient(55px 22px at 65% 10%, rgba(255,255,255,0.55), transparent),
+            radial-gradient(30px 14px at 82% 25%, rgba(255,255,255,0.65), transparent),
+            radial-gradient(45px 16px at 40% 30%, rgba(255,255,255,0.45), transparent)
+          `
+          : `
+            radial-gradient(1.5px 1.5px at 17% 22%, white, transparent),
+            radial-gradient(1px 1px at 53% 11%, white, transparent),
+            radial-gradient(1.5px 1.5px at 87% 38%, white, transparent),
+            radial-gradient(1px 1px at 28% 64%, white, transparent),
+            radial-gradient(1px 1px at 72% 84%, white, transparent),
+            radial-gradient(2px 2px at 9% 88%, white, transparent),
+            radial-gradient(1.5px 1.5px at 95% 15%, white, transparent),
+            radial-gradient(1px 1px at 42% 47%, white, transparent)
+          `,
+        opacity: isLight ? 1 : 0.55,
       }} />
 
       <div style={{ position: 'relative', zIndex: 1, minHeight: '100vh' }}>
@@ -1054,21 +1075,24 @@ export default function TowerView() {
             onClick={() => setBrainOpen(true)}
             style={{
               all: 'unset', cursor: 'pointer', position: 'relative',
-              background: 'radial-gradient(circle, rgba(91,163,255,0.22) 0%, transparent 70%)',
-              border: '1px solid rgba(91,163,255,0.3)', borderRadius: '50%',
+              background: isLight
+                ? 'radial-gradient(circle, rgba(194,81,10,0.15) 0%, transparent 70%)'
+                : 'radial-gradient(circle, rgba(91,163,255,0.22) 0%, transparent 70%)',
+              border: isLight ? '1px solid rgba(194,81,10,0.3)' : '1px solid rgba(91,163,255,0.3)',
+              borderRadius: '50%',
               padding: 12,
-              boxShadow: '0 0 48px rgba(91,163,255,0.28)',
+              boxShadow: isLight ? '0 0 48px rgba(194,81,10,0.22)' : '0 0 48px rgba(91,163,255,0.28)',
               transition: 'transform 0.15s, box-shadow 0.2s',
             }}
             onMouseEnter={e => {
               const el = e.currentTarget as HTMLElement
               el.style.transform = 'scale(1.08)'
-              el.style.boxShadow = '0 0 72px rgba(91,163,255,0.5)'
+              el.style.boxShadow = isLight ? '0 0 72px rgba(194,81,10,0.4)' : '0 0 72px rgba(91,163,255,0.5)'
             }}
             onMouseLeave={e => {
               const el = e.currentTarget as HTMLElement
               el.style.transform = ''
-              el.style.boxShadow = '0 0 48px rgba(91,163,255,0.28)'
+              el.style.boxShadow = isLight ? '0 0 48px rgba(194,81,10,0.22)' : '0 0 48px rgba(91,163,255,0.28)'
             }}
             title="Click to dispatch a task"
             aria-label="Dispatch task"
@@ -1128,7 +1152,9 @@ export default function TowerView() {
           <div style={{ width: NATURAL_SCENE_W, height: NATURAL_SCENE_H, transform: `scale(${sceneScale})`, transformOrigin: 'top left' }}>
           <Scene
             spec={sceneSpec}
-            style={{ filter: 'drop-shadow(0 0 30px rgba(91,163,255,0.2))' }}
+            style={{ filter: isLight
+              ? 'drop-shadow(0 4px 20px rgba(0,0,0,0.18))'
+              : 'drop-shadow(0 0 30px rgba(91,163,255,0.2))' }}
           >
 
             {/* Empty state */}
@@ -1137,7 +1163,7 @@ export default function TowerView() {
                 position: 'absolute', inset: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 color: 'var(--text3)', fontSize: 12, textAlign: 'center', padding: 40,
-                background: 'rgba(0,0,0,0.4)',
+                background: isLight ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)',
               }}>
                 <div>
                   <div style={{ fontSize: 28, opacity: 0.4, marginBottom: 8 }}>🏢</div>
@@ -1154,6 +1180,7 @@ export default function TowerView() {
               sheet={liftSheet}
               floorLabel={FLOOR_LABEL[liftFloor]}
               tilePx={TILE_PX}
+              isLight={isLight}
             />
 
             {/* "+N more" indicator at the lounge */}
@@ -1162,7 +1189,7 @@ export default function TowerView() {
                 ...tilePos(SCENE_WIDTH / 2, SCENE_HEIGHT - 0.3, TILE_PX, 'center'),
                 fontSize: 10, fontWeight: 700,
                 color: 'var(--text)',
-                background: 'rgba(0,0,0,0.78)',
+                background: isLight ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.78)',
                 border: '1px solid var(--glass-border)',
                 padding: '2px 9px', borderRadius: 99,
                 whiteSpace: 'nowrap',
@@ -1197,6 +1224,7 @@ export default function TowerView() {
                     state={state}
                     sheet={sheet}
                     onClick={() => setSelected(session)}
+                    isLight={isLight}
                   />
                 </div>
               )
