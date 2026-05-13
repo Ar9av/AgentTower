@@ -40,6 +40,76 @@ function CodeBlock({ code }: { code: string }) {
   )
 }
 
+// ── Inline segments (shared by TextContent and table cells) ──────────────────
+function renderInline(line: string): React.ReactNode[] {
+  const segments = line.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/)
+  return segments.map((seg, i) => {
+    if (seg.startsWith('`') && seg.endsWith('`') && seg.length > 2)
+      return <code key={i} style={{ background: 'var(--bg3)', padding: '1px 4px', borderRadius: 4, fontSize: 13, fontFamily: 'ui-monospace, monospace' }}>{seg.slice(1, -1)}</code>
+    if (seg.startsWith('**') && seg.endsWith('**') && seg.length > 4)
+      return <strong key={i}>{seg.slice(2, -2)}</strong>
+    if (seg.startsWith('*') && seg.endsWith('*') && seg.length > 2)
+      return <em key={i}>{seg.slice(1, -1)}</em>
+    return seg
+  })
+}
+
+// ── Markdown table ────────────────────────────────────────────────────────────
+function MarkdownTable({ rows }: { rows: string[] }) {
+  const parsed = rows.map(r => {
+    const cells = r.split('|')
+    // strip leading/trailing empty cells from surrounding pipes
+    const start = cells[0].trim() === '' ? 1 : 0
+    const end = cells[cells.length - 1].trim() === '' ? cells.length - 1 : cells.length
+    return cells.slice(start, end).map(c => c.trim())
+  })
+
+  if (parsed.length < 2) return null
+  const isSep = (row: string[]) => row.every(c => /^:?-{1,}:?$/.test(c))
+  const sepIdx = parsed.findIndex(isSep)
+  if (sepIdx < 1) return null
+
+  const headers = parsed[sepIdx - 1]
+  const body = parsed.slice(sepIdx + 1)
+
+  return (
+    <div style={{ overflowX: 'auto', margin: '10px 0' }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%', minWidth: 'max-content' }}>
+        <thead>
+          <tr>
+            {headers.map((cell, i) => (
+              <th key={i} style={{
+                padding: '7px 14px', background: 'var(--bg3)',
+                border: '1px solid var(--glass-border)',
+                fontWeight: 600, textAlign: 'left', color: 'var(--text)',
+                whiteSpace: 'nowrap',
+              }}>
+                {renderInline(cell)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.map((row, ri) => (
+            <tr key={ri} style={{ background: ri % 2 === 1 ? 'rgba(255,255,255,0.03)' : 'transparent' }}>
+              {row.map((cell, ci) => (
+                <td key={ci} style={{
+                  padding: '6px 14px',
+                  border: '1px solid var(--glass-border)',
+                  color: cell === '—' || cell === '-' ? 'var(--text3)' : 'var(--text2)',
+                  verticalAlign: 'top',
+                }}>
+                  {renderInline(cell)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ── Text content ──────────────────────────────────────────────────────────────
 function TextContent({ text }: { text: string }) {
   const lines = text.split('\n')
@@ -47,6 +117,7 @@ function TextContent({ text }: { text: string }) {
   let inFence = false
   let fenceLang = ''
   let fenceLines: string[] = []
+  let tableLines: string[] = []
   let key = 0
 
   function flushFence() {
@@ -54,8 +125,16 @@ function TextContent({ text }: { text: string }) {
     fenceLines = []; fenceLang = ''
   }
 
+  function flushTable() {
+    if (tableLines.length > 0) {
+      parts.push(<MarkdownTable key={key++} rows={tableLines} />)
+      tableLines = []
+    }
+  }
+
   for (const line of lines) {
     if (!inFence && line.startsWith('```')) {
+      flushTable()
       inFence = true; fenceLang = line.slice(3); continue
     }
     if (inFence) {
@@ -63,16 +142,15 @@ function TextContent({ text }: { text: string }) {
       else fenceLines.push(line)
       continue
     }
-    const segments = line.split(/(`[^`]+`|\*\*[^*]+\*\*)/)
-    const inline = segments.map((seg, i) => {
-      if (seg.startsWith('`') && seg.endsWith('`'))
-        return <code key={i} style={{ background: 'var(--bg3)', padding: '1px 4px', borderRadius: 4, fontSize: 13, fontFamily: 'ui-monospace, monospace' }}>{seg.slice(1, -1)}</code>
-      if (seg.startsWith('**') && seg.endsWith('**'))
-        return <strong key={i}>{seg.slice(2, -2)}</strong>
-      return seg
-    })
-    parts.push(<span key={key++}>{inline}<br /></span>)
+    // Table lines start with |
+    if (line.trim().startsWith('|')) {
+      tableLines.push(line)
+      continue
+    }
+    flushTable()
+    parts.push(<span key={key++}>{renderInline(line)}<br /></span>)
   }
+  flushTable()
   if (inFence && fenceLines.length) flushFence()
 
   void fenceLang
