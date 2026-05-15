@@ -499,6 +499,41 @@ textarea.glass-input { font-family: inherit; resize: none; }
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   New session form — mobile layout
+══════════════════════════════════════════════════════════════════ */
+.new-session-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.new-session-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Session bottom bar — textarea full-width on small phones
+══════════════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .bottom-bar-inputs {
+    flex-direction: column;
+  }
+  .bottom-bar-inputs textarea,
+  .bottom-bar-inputs input {
+    flex: unset !important;
+    width: 100% !important;
+  }
+}
+
+/* Live session message area — full width on mobile */
+@media (max-width: 640px) {
+  .session-messages-inner {
+    max-width: 100% !important;
+  }
+}
+
 /* Highlight a deep-linked message */
 .msg-highlight {
   border-radius: 12px;

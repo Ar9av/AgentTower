@@ -99,26 +99,28 @@ export default function NewSessionForm({ projectPath }: Props) {
             </span>
           </p>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <ImageAttachment image={image} onAttach={setImage} onRemove={() => setImage(null)} />
-            <textarea
-              className="glass-input"
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e) }
-              }}
-              onPaste={handlePaste}
-              placeholder="What do you want Claude to do? Paste an image with Cmd+V"
-              autoFocus
-              rows={2}
-              style={{ flex: 1, fontSize: 14, padding: '10px 14px', borderRadius: 10, resize: 'none', lineHeight: 1.5 }}
-            />
+          <form onSubmit={handleSubmit} className="new-session-form">
+            <div className="new-session-row">
+              <ImageAttachment image={image} onAttach={setImage} onRemove={() => setImage(null)} />
+              <textarea
+                className="glass-input"
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e) }
+                }}
+                onPaste={handlePaste}
+                placeholder="What do you want Claude to do? Paste an image with Cmd+V"
+                autoFocus
+                rows={3}
+                style={{ flex: 1, fontSize: 16, padding: '10px 14px', borderRadius: 10, resize: 'none', lineHeight: 1.5 }}
+              />
+            </div>
             <button
               type="submit"
               className="glass-btn-prominent"
               disabled={(!prompt.trim() && !image) || launching}
-              style={{ width: 'auto', padding: '0 20px', fontSize: 14, flexShrink: 0, alignSelf: 'stretch' }}
+              style={{ width: '100%', padding: '12px 20px', fontSize: 14 }}
             >
               {launching ? '…' : 'Launch ↗'}
             </button>

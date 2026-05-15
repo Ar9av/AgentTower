@@ -69,7 +69,7 @@ export default function Nav() {
         <button
           className="glass-btn show-mobile"
           onClick={toggleSidebar}
-          style={{ padding: '8px 10px', minHeight: 36, fontSize: 17, flexShrink: 0 }}
+          style={{ padding: '10px 14px', minHeight: 44, fontSize: 17, flexShrink: 0 }}
           aria-label="Open recent sessions"
         >
           ☰

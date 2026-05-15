@@ -594,7 +594,7 @@ export default function MessageBlock({
       </div>
 
       <div style={{
-        maxWidth: 'min(80%, 700px)',
+        maxWidth: 'min(92%, 700px)',
         background: isUser ? 'color-mix(in srgb, var(--accent) 22%, var(--glass-bg))' : 'var(--glass-bg)',
         backdropFilter: isUser ? undefined : 'blur(16px) saturate(1.5)',
         WebkitBackdropFilter: isUser ? undefined : 'blur(16px) saturate(1.5)',

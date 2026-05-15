@@ -611,8 +611,8 @@ export default function LiveSession({
       </div>
 
       {/* ── Messages ─────────────────────────────────────────────────── */}
-      <div ref={containerRef} onScroll={checkAtBottom} style={{ flex: 1, overflowY: 'auto', padding: 'clamp(14px,3vw,24px) clamp(12px,4vw,28px)' }}>
-        <div style={{ maxWidth: 840, margin: '0 auto' }}>
+      <div ref={containerRef} onScroll={checkAtBottom} style={{ flex: 1, overflowY: 'auto', padding: 'clamp(10px,3vw,24px) clamp(8px,3vw,20px)' }}>
+        <div style={{ maxWidth: 'min(100%, 840px)', margin: '0 auto' }}>
 
           {/* Pinned first message */}
           {firstMessage && !firstInWindow && (
@@ -862,7 +862,7 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
             <button type="button" onClick={() => onAttachImage(null)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', marginLeft: 'auto', fontSize: 16, padding: 4 }}>✕</button>
           </div>
         )}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <div className="bottom-bar-inputs" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
           <textarea
             className="glass-input"
@@ -874,7 +874,7 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
             }}
             placeholder={isThinking ? 'Claude is thinking — you can keep typing…' : 'Message Claude… (Enter to send, Shift+Enter for newline)'}
             rows={1}
-            style={{ flex: '1 1 160px', fontSize: 15, padding: '10px 16px', borderRadius: 12, resize: 'none', lineHeight: 1.5, maxHeight: 160, overflowY: 'auto' }}
+            style={{ flex: '1 1 160px', fontSize: 16, padding: '10px 16px', borderRadius: 12, resize: 'none', lineHeight: 1.5, maxHeight: 160, overflowY: 'auto' }}
           />
           {/* Stop current task + resend — shown only when text is typed and Claude is running */}
           {inputText.trim() && pid && isThinking && (

@@ -73,7 +73,7 @@ export default function Sidebar() {
         style={{
           position: 'fixed',
           top: 0, left: 0, bottom: 0,
-          width: 'min(320px, 88vw)',
+          width: 'min(280px, 85vw)',
           zIndex: 201,
           display: 'flex',
           flexDirection: 'column',
@@ -98,8 +98,9 @@ export default function Sidebar() {
             onClick={close}
             style={{
               background: 'none', border: 'none', color: 'var(--text2)',
-              fontSize: 18, cursor: 'pointer', padding: '4px 8px',
-              borderRadius: 6, lineHeight: 1,
+              fontSize: 18, cursor: 'pointer', padding: '8px 12px',
+              borderRadius: 6, lineHeight: 1, minHeight: 44, minWidth: 44,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
             aria-label="Close sidebar"
           >
