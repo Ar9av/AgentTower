@@ -1,11 +1,13 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getSessionToken, validateSession } from '@/lib/auth'
-import { listSessions, decodeB64, encodeB64, resolveProjectPath } from '@/lib/claude-fs'
+import { listSessions, decodeB64, encodeB64, resolveProjectPath, detectContinuationChains } from '@/lib/claude-fs'
 import { getProjectMeta } from '@/lib/project-meta'
+import { loadSessionTags } from '@/lib/session-tags'
 import Nav from '@/components/Nav'
 import ProcessControls from '@/components/ProcessControls'
 import NewSessionForm from '@/components/NewSessionForm'
+import SessionTagsButton from '@/components/SessionTagsButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +28,14 @@ export default async function ProjectPage({ searchParams }: Props) {
   const projectPath = resolveProjectPath(dirName)
   const meta = getProjectMeta(projectPath)
   const title = meta?.displayName || projectPath.split('/').pop() || projectPath
+  const chains = detectContinuationChains(dirName)
+  const tagStore = loadSessionTags()
+
+  // Build reverse map: parentId → childId
+  const childOf = new Map<string, string>()
+  for (const [child, parent] of chains.entries()) {
+    childOf.set(parent, child)
+  }
 
   const active = sessions.filter(s => s.processState === 'running' || s.processState === 'paused')
   const history = sessions.filter(s => s.processState !== 'running' && s.processState !== 'paused')
@@ -67,7 +77,15 @@ export default async function ProjectPage({ searchParams }: Props) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {active.map(s => (
-                <SessionRow key={s.sessionId} session={s} />
+                <SessionRow
+                  key={s.sessionId}
+                  session={s}
+                  parentId={chains.get(s.sessionId)}
+                  childId={childOf.get(s.sessionId)}
+                  allSessions={sessions}
+                  initialFavorite={tagStore.sessions[s.sessionId]?.favorite ?? false}
+                  initialTags={tagStore.sessions[s.sessionId]?.tags ?? []}
+                />
               ))}
             </div>
           </section>
@@ -83,7 +101,15 @@ export default async function ProjectPage({ searchParams }: Props) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {history.map(s => (
-                <SessionRow key={s.sessionId} session={s} />
+                <SessionRow
+                  key={s.sessionId}
+                  session={s}
+                  parentId={chains.get(s.sessionId)}
+                  childId={childOf.get(s.sessionId)}
+                  allSessions={sessions}
+                  initialFavorite={tagStore.sessions[s.sessionId]?.favorite ?? false}
+                  initialTags={tagStore.sessions[s.sessionId]?.tags ?? []}
+                />
               ))}
             </div>
           )}
@@ -108,10 +134,27 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`
 }
 
-function SessionRow({ session: s }: { session: ReturnType<typeof listSessions>[0] }) {
+function SessionRow({
+  session: s,
+  parentId,
+  childId,
+  allSessions,
+  initialFavorite,
+  initialTags,
+}: {
+  session: ReturnType<typeof listSessions>[0]
+  parentId?: string
+  childId?: string
+  allSessions: ReturnType<typeof listSessions>
+  initialFavorite: boolean
+  initialTags: string[]
+}) {
   const chipClass =
     s.processState === 'running' ? 'chip chip-green' :
     s.processState === 'paused'  ? 'chip chip-yellow' : 'chip'
+
+  const parentSession = parentId ? allSessions.find(x => x.sessionId === parentId) : null
+  const childSession  = childId  ? allSessions.find(x => x.sessionId === childId)  : null
 
   return (
     <div className="glass" style={{
@@ -152,6 +195,24 @@ function SessionRow({ session: s }: { session: ReturnType<typeof listSessions>[0
           )}
           <span className="chip">{formatRelative(s.mtime)}</span>
           <span className="chip" style={{ fontFamily: 'ui-monospace, monospace' }}>{s.sessionId.slice(0, 8)}</span>
+
+          {parentSession && (
+            <Link href={`/session?f=${encodeB64(parentSession.filepath)}`} className="chip" style={{ textDecoration: 'none' }} title="Continued from">
+              ← {parentSession.sessionId.slice(0, 8)}
+            </Link>
+          )}
+          {childSession && (
+            <Link href={`/session?f=${encodeB64(childSession.filepath)}`} className="chip chip-green" style={{ textDecoration: 'none' }} title="Continues in">
+              → {childSession.sessionId.slice(0, 8)}
+            </Link>
+          )}
+
+          <SessionTagsButton
+            sessionId={s.sessionId}
+            initialFavorite={initialFavorite}
+            initialTags={initialTags}
+            compact
+          />
         </div>
       </div>
 

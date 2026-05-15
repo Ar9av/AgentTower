@@ -132,6 +132,16 @@ export default function Nav() {
 
           <Notifications />
 
+          {/* Analytics */}
+          <Link
+            href="/analytics"
+            className="glass-btn hide-mobile"
+            style={{ padding: '6px 12px', minHeight: 36, fontSize: 13, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+            title="Analytics"
+          >
+            📊 Analytics
+          </Link>
+
           {/* Tower */}
           <Link
             href="/tower"

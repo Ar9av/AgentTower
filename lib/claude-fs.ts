@@ -498,10 +498,10 @@ export function discoverProjects(): ProjectInfo[] {
 
 // ─── Cost estimation ────────────────────────────────────────────────────────
 
-const MODEL_PRICING: Record<string, { input: number; output: number; cacheRead: number }> = {
-  haiku:   { input: 0.80, output: 4.00, cacheRead: 0.08 },
-  opus:    { input: 15.0, output: 75.0, cacheRead: 1.50 },
-  sonnet:  { input: 3.00, output: 15.0, cacheRead: 0.30 },
+const MODEL_PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
+  haiku:   { input: 0.80, output: 4.00, cacheRead: 0.08, cacheWrite: 1.00 },
+  opus:    { input: 15.0, output: 75.0, cacheRead: 1.50, cacheWrite: 18.75 },
+  sonnet:  { input: 3.00, output: 15.0, cacheRead: 0.30, cacheWrite: 3.75 },
 }
 
 function getModelPricing(model?: string) {
@@ -520,7 +520,8 @@ function computeSessionCost(messages: ParsedMessage[]): number {
     total +=
       (m.usage.input_tokens / 1_000_000) * p.input +
       (m.usage.output_tokens / 1_000_000) * p.output +
-      ((m.usage.cache_read_input_tokens ?? 0) / 1_000_000) * p.cacheRead
+      ((m.usage.cache_read_input_tokens ?? 0) / 1_000_000) * p.cacheRead +
+      ((m.usage.cache_creation_input_tokens ?? 0) / 1_000_000) * p.cacheWrite
   }
   return total
 }
@@ -816,4 +817,53 @@ export function findSessionProjectCwd(sessionId: string): string | null {
     return recorded || decoded
   }
   return null
+}
+
+// ─── Continuation chain detection ─────────────────────────────────────────
+
+/** Read the sessionId recorded in the first message of a JSONL file cheaply (partial read). */
+function readFirstSessionId(filepath: string): string | null {
+  try {
+    const stat = fs.statSync(filepath)
+    if (stat.size === 0) return null
+    const readSize = Math.min(4096, stat.size)
+    const fd = fs.openSync(filepath, 'r')
+    const buf = Buffer.alloc(readSize)
+    fs.readSync(fd, buf, 0, readSize, 0)
+    fs.closeSync(fd)
+    const lines = buf.toString('utf-8').split('\n')
+    for (const line of lines) {
+      const t = line.trim()
+      if (!t) continue
+      try {
+        const obj = JSON.parse(t)
+        if (typeof obj.sessionId === 'string' && obj.sessionId) return obj.sessionId
+      } catch { continue }
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+/**
+ * Returns a Map of childSessionId → parentSessionId for sessions in the given project
+ * that are continuations of another session in the same project.
+ */
+export function detectContinuationChains(projectDirName: string): Map<string, string> {
+  const dirPath = path.join(getProjectsDir(), projectDirName)
+  const chains = new Map<string, string>()
+  let files: string[]
+  try {
+    files = fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl'))
+  } catch {
+    return chains
+  }
+  const sessionIds = new Set(files.map(f => path.basename(f, '.jsonl')))
+  for (const file of files) {
+    const sessionId = path.basename(file, '.jsonl')
+    const firstSessionId = readFirstSessionId(path.join(dirPath, file))
+    if (firstSessionId && firstSessionId !== sessionId && sessionIds.has(firstSessionId)) {
+      chains.set(sessionId, firstSessionId)
+    }
+  }
+  return chains
 }

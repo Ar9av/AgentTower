@@ -38,6 +38,7 @@ export default async function SessionPage({ searchParams }: Props) {
     <>
       <Nav />
       <LiveSession
+        key={sessionId}
         initialData={sessionData}
         encodedFilepath={encoded}
         sessionId={sessionId}

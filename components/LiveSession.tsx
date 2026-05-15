@@ -5,6 +5,7 @@ import MessageBlock from './MessageBlock'
 import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import SessionTagsButton from './SessionTagsButton'
 
 type ProcState = 'running' | 'paused' | 'dead' | 'unknown'
 
@@ -430,95 +431,16 @@ export default function LiveSession({
   async function exportMarkdown() {
     if (exporting) return
     setExporting(true)
-
     try {
-      // Fetch ALL pages oldest-first so we get the complete history
-      const allMsgs: ParsedMessage[] = []
-      let cursor: string | undefined = undefined
-      let fetchedFirst = false
-
-      // Keep fetching until no more pages
-      while (true) {
-        const url = `/api/session?f=${encodedFilepath}&limit=200${cursor ? `&before=${cursor}` : ''}`
-        const res = await fetch(url)
-        if (!res.ok) break
-        const data: PaginatedSession = await res.json()
-
-        // Prepend this page (it's the older chunk)
-        allMsgs.unshift(...data.messages)
-
-        if (!fetchedFirst && data.firstMessage) {
-          // Insert the pinned first message at the very front if not already included
-          const alreadyIn = data.messages.some(m => m.uuid === data.firstMessage!.uuid)
-          if (!alreadyIn) allMsgs.unshift(data.firstMessage)
-          fetchedFirst = true
-        }
-
-        if (!data.hasMore) break
-        // Cursor = oldest uuid in this batch
-        cursor = data.messages[0]?.uuid
-        if (!cursor) break
-      }
-
-      // De-duplicate by uuid (keep order)
-      const seen = new Set<string>()
-      const deduped = allMsgs.filter(m => {
-        if (seen.has(m.uuid)) return false
-        seen.add(m.uuid)
-        return true
-      })
-
-      const lines: string[] = [
-        `# Session ${sessionId}`,
-        ``,
-        `> Exported ${new Date().toLocaleString()} · ${deduped.filter(m => !m.isMeta).length} messages`,
-        ``,
-        `---`,
-        ``,
-      ]
-
-      for (const msg of deduped) {
-        if (msg.isMeta) continue
-        if (msg.uuid.startsWith('__optimistic__')) continue
-
-        const role = msg.type === 'user' ? 'You' : 'Claude'
-        const ts = new Date(msg.timestamp).toLocaleString()
-        lines.push(`## ${role}  ·  ${ts}`, ``)
-
-        for (const block of msg.content) {
-          if (block.type === 'text' && block.text) {
-            lines.push(block.text, ``)
-          } else if (block.type === 'thinking' && block.thinking) {
-            lines.push(`> **[Thinking]**`, `>`, ...block.thinking.split('\n').map(l => `> ${l}`), ``)
-          } else if (block.type === 'tool_use') {
-            lines.push(
-              `**Tool: \`${block.tool_name ?? 'unknown'}\`**`,
-              ``,
-              `\`\`\`json`,
-              JSON.stringify(block.tool_input, null, 2),
-              `\`\`\``,
-              ``,
-            )
-          } else if (block.type === 'tool_result') {
-            const text = block.tool_result?.map(b => b.text ?? '').join('\n') ?? ''
-            const label = block.is_error ? '**[Tool Error]**' : '**[Tool Result]**'
-            lines.push(label, ``, `\`\`\``, text || '(empty)', `\`\`\``, ``)
-          } else if (block.type === 'image') {
-            lines.push(`*[Image attachment]*`, ``)
-          }
-        }
-
-        lines.push(`---`, ``)
-      }
-
-      const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
+      const res = await fetch(`/api/export?f=${encodedFilepath}`)
+      if (!res.ok) throw new Error('export failed')
+      const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = `session-${sessionId.slice(0, 8)}.md`
       a.click()
       URL.revokeObjectURL(url)
-
       setExported(true)
       setTimeout(() => setExported(false), 1500)
     } finally {
@@ -658,6 +580,7 @@ export default function LiveSession({
             {exported ? '✓' : exporting ? <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span> : '↓'}
             <span className="hide-mobile" style={{ marginLeft: 4 }}>{exported ? 'Saved' : exporting ? 'Exporting…' : 'Export MD'}</span>
           </button>
+          <SessionTagsButton sessionId={sessionId} />
           <span className="chip hide-mobile">{total} msgs</span>
           {sessionFilter.trim().length >= 2 && (
             <span className="chip hide-mobile" style={{ color: 'var(--yellow)' }}>
