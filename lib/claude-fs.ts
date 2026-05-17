@@ -292,6 +292,30 @@ export interface RecentSession {
   mtime: number
   isActive: boolean
   currentActivity: string | null  // last tool name, "thinking", "writing", or null
+  parentSessionId: string | null  // set if this was spawned as a subagent
+}
+
+/** Read the parentSessionId from the first JSONL line (for subagent detection). */
+function readParentSessionId(filepath: string): string | null {
+  try {
+    const stat = fs.statSync(filepath)
+    if (stat.size === 0) return null
+    const readSize = Math.min(4096, stat.size)
+    const fd = fs.openSync(filepath, 'r')
+    const buf = Buffer.alloc(readSize)
+    fs.readSync(fd, buf, 0, readSize, 0)
+    fs.closeSync(fd)
+    const lines = buf.toString('utf-8').split('\n')
+    for (const line of lines) {
+      const t = line.trim()
+      if (!t) continue
+      try {
+        const obj = JSON.parse(t)
+        if (typeof obj.parentSessionId === 'string' && obj.parentSessionId) return obj.parentSessionId
+      } catch { continue }
+    }
+  } catch { /* ignore */ }
+  return null
 }
 
 /** Read tail of JSONL and return what the agent is currently doing.
@@ -373,6 +397,7 @@ export function getRecentSessions(limit = 20): RecentSession[] {
         mtime,
         isActive,
         currentActivity: isActive ? readCurrentActivity(filepath) : null,
+        parentSessionId: readParentSessionId(filepath),
       })
     }
   }

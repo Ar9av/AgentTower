@@ -302,11 +302,32 @@ function AnimatedSprite({ row, colA, colB, hue, size, sheet, cycleMs = 700, anim
   )
 }
 
+// ── Mini bot — small working agent for subagent visualization ─────────────
+function MiniBot({ hue, sheet, cycleOffset = 0 }: {
+  hue: number; sheet: string | null; cycleOffset?: number
+}) {
+  const MINI = 20
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.88 }}>
+      <AnimatedSprite
+        row={ROW.AGENT} colA={COL.IDLE} colB={COL.WORKING}
+        hue={hue} size={MINI} sheet={sheet}
+        cycleMs={820 + cycleOffset}
+        animClass="tower-agent-working"
+      />
+      <div style={{
+        width: MINI * 0.55, height: 2, borderRadius: '50%',
+        background: 'rgba(0,0,0,0.38)', filter: 'blur(1px)', marginTop: -2,
+      }} />
+    </div>
+  )
+}
+
 // ── Agent card ────────────────────────────────────────────────────────────
-function AgentCard({ session, state, sheet, onClick, isLight }: {
+function AgentCard({ session, state, sheet, onClick, isLight, subagentCount = 0 }: {
   session: RecentSession; state: AgentState
   sheet: string | null; onClick: () => void
-  isLight?: boolean
+  isLight?: boolean; subagentCount?: number
 }) {
   const hue = sessionHue(session.sessionId)
   const isIdle = state === 'idle'
@@ -386,6 +407,23 @@ function AgentCard({ session, state, sheet, onClick, isLight }: {
         {(state === 'done' || state === 'signal') && (
           <div style={{ fontSize: 10, animation: 'tower-pulse 0.9s ease-in-out infinite' }}>
             {state === 'done' ? '✦' : '☆'}
+          </div>
+        )}
+
+        {/* Subagent count badge — shown when this agent has active sub-bots */}
+        {subagentCount > 0 && state === 'working' && (
+          <div style={{
+            padding: '1px 5px',
+            background: 'rgba(255,180,60,0.22)',
+            border: '1px solid rgba(255,180,60,0.5)',
+            borderRadius: 99, fontSize: 9, lineHeight: 1.2,
+            color: 'var(--yellow)',
+            fontWeight: 700,
+            animation: 'tower-pulse 2s ease-in-out infinite',
+            display: 'flex', alignItems: 'center', gap: 3,
+            marginBottom: 1,
+          }}>
+            🤝 ×{subagentCount}
           </div>
         )}
 
@@ -962,6 +1000,40 @@ export default function TowerView() {
 
   const workingCount = floorCounts.office_1 + floorCounts.office_2
 
+  // Build parent → [subagent sessions] map using explicit parentSessionId links.
+  // Fallback: when an agent is actively using the Task tool and co-located active
+  // sessions exist in the same project, treat those as heuristic subagents.
+  const subagentsByParent = useMemo(() => {
+    const map = new Map<string, RecentSession[]>()
+    const byId = new Map(sessions.map(s => [s.sessionId, s]))
+
+    // Pass 1: explicit parentSessionId links written by Claude Code subagent spawning
+    for (const s of sessions) {
+      if (!s.parentSessionId) continue
+      const parent = byId.get(s.parentSessionId)
+      if (!parent) continue
+      const list = map.get(s.parentSessionId) ?? []
+      list.push(s)
+      map.set(s.parentSessionId, list)
+    }
+
+    // Pass 2: heuristic — agent actively using Task tool + co-located active sessions
+    for (const parent of sessions) {
+      if (map.has(parent.sessionId)) continue
+      if (agentStates[parent.sessionId] !== 'working') continue
+      if (parent.currentActivity !== 'Task') continue
+      const coactive = sessions.filter(s =>
+        s.sessionId !== parent.sessionId &&
+        s.projectDirName === parent.projectDirName &&
+        agentStates[s.sessionId] === 'working' &&
+        Math.abs(s.mtime - parent.mtime) < 90_000
+      )
+      if (coactive.length > 0) map.set(parent.sessionId, coactive)
+    }
+
+    return map
+  }, [sessions, agentStates])
+
   // Detect floor changes → queue lift visits
   useEffect(() => {
     const prev = prevAssignmentRef.current
@@ -1210,23 +1282,58 @@ export default function TowerView() {
               const slot = groupSlots[a.slotIdx]
               const tileX = slot.x
               const tileY = slot.y + a.rowOffset
+
+              // Active subagents for this parent — up to 3 rendered as mini bots
+              const subagents = (subagentsByParent.get(session.sessionId) ?? [])
+                .filter(s => agentStates[s.sessionId] === 'working')
+                .slice(0, 3)
+              // Mini-bot x tile offsets to spread them left/right of the parent
+              const MINI_OFFSETS = [
+                [-0.68],
+                [-0.72, 0.72],
+                [-0.82, 0.05, 0.82],
+              ]
+              const miniOffsets = MINI_OFFSETS[Math.max(0, subagents.length - 1)] ?? []
+
               return (
-                <div
-                  key={session.sessionId}
-                  style={{
-                    ...tilePos(tileX, tileY, TILE_PX, 'bottom-center'),
-                    transition: 'left 1.1s cubic-bezier(0.4, 0, 0.2, 1), top 1.1s cubic-bezier(0.4, 0, 0.2, 1)',
-                    zIndex: 3,
-                  }}
-                >
-                  <AgentCard
-                    session={session}
-                    state={state}
-                    sheet={sheet}
-                    onClick={() => setSelected(session)}
-                    isLight={isLight}
-                  />
-                </div>
+                <span key={session.sessionId}>
+                  {/* Mini bots — rendered behind parent (zIndex 2) at desk level */}
+                  {subagents.map((sub, i) => (
+                    <div
+                      key={`mini-${sub.sessionId}`}
+                      style={{
+                        ...tilePos(tileX + miniOffsets[i], tileY, TILE_PX, 'bottom-center'),
+                        transition: 'left 1.1s cubic-bezier(0.4, 0, 0.2, 1), top 1.1s cubic-bezier(0.4, 0, 0.2, 1)',
+                        zIndex: 2,
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      <MiniBot
+                        hue={sessionHue(sub.sessionId)}
+                        sheet={sheet}
+                        cycleOffset={i * 110}
+                      />
+                    </div>
+                  ))}
+
+                  {/* Main agent */}
+                  <div
+                    style={{
+                      ...tilePos(tileX, tileY, TILE_PX, 'bottom-center'),
+                      transition: 'left 1.1s cubic-bezier(0.4, 0, 0.2, 1), top 1.1s cubic-bezier(0.4, 0, 0.2, 1)',
+                      zIndex: 3,
+                    }}
+                  >
+                    <AgentCard
+                      session={session}
+                      state={state}
+                      sheet={sheet}
+                      onClick={() => setSelected(session)}
+                      isLight={isLight}
+                      subagentCount={subagents.length}
+                    />
+                  </div>
+                </span>
               )
             })}
           </Scene>
