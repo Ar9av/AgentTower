@@ -71,35 +71,35 @@ export default function ProjectsView({ initialProjects }: Props) {
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>Projects</h1>
-          <p style={{ margin: 0, color: 'var(--text2)', fontSize: 13 }}>
-            {projects.length} project{projects.length !== 1 ? 's' : ''}
+          <h1 style={{ margin: '0 0 5px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.03em' }}>Projects</h1>
+          <p style={{ margin: 0, color: 'var(--text2)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontFeatureSettings: '"tnum"' }}>{projects.length}</span>
+            <span>project{projects.length !== 1 ? 's' : ''}</span>
             {activeCount > 0 && (
-              <span style={{ marginLeft: 10 }}>
-                <span className="dot-active" style={{ marginRight: 5 }} />
-                <span style={{ color: 'var(--green)' }}>{activeCount} active</span>
-              </span>
+              <>
+                <span style={{ color: 'var(--text3)', margin: '0 2px' }}>·</span>
+                <span className="dot-active" />
+                <span style={{ color: 'var(--green)', fontWeight: 600 }}>{activeCount} active</span>
+              </>
             )}
           </p>
         </div>
         <button
           className="glass-btn-prominent"
           onClick={() => setShowAdd(true)}
-          style={{ padding: '10px 18px', fontSize: 13, fontWeight: 600, minHeight: 40 }}
+          style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, minHeight: 40, width: 'auto' }}
         >
           + Add Project
         </button>
       </div>
 
       {agAgents.length > 0 && (
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
-            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text2)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-              🚀 Antigravity Agents
-            </h2>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>{agAgents.length} agent{agAgents.length !== 1 ? 's' : ''}</span>
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <span className="section-heading">Antigravity Agents</span>
+            <span className="chip">{agAgents.length} agent{agAgents.length !== 1 ? 's' : ''}</span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))', gap: 10 }}>
             {agAgents.map(a => <AgentCard key={a.id} agent={a} />)}
@@ -108,10 +108,21 @@ export default function ProjectsView({ initialProjects }: Props) {
       )}
 
       {projects.length === 0 ? (
-        <div className="glass" style={{ borderRadius: 16, padding: '60px 40px', textAlign: 'center' }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>🗂</div>
-          <p style={{ fontSize: 16, color: 'var(--text)', margin: '0 0 8px' }}>No projects yet</p>
-          <p style={{ fontSize: 13, color: 'var(--text2)', margin: 0 }}>Click &quot;Add Project&quot; to clone a repo or create a new workspace.</p>
+        <div className="glass" style={{ borderRadius: 18, padding: '64px 40px', textAlign: 'center' }}>
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+            style={{ color: 'var(--text3)', margin: '0 auto 16px', display: 'block' }}>
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', margin: '0 0 6px', letterSpacing: '-0.01em' }}>No projects yet</p>
+          <p style={{ fontSize: 13, color: 'var(--text2)', margin: '0 0 20px' }}>Clone a repo or create a new workspace to get started.</p>
+          <button
+            className="glass-btn-prominent"
+            onClick={() => setShowAdd(true)}
+            style={{ display: 'inline-flex', width: 'auto', padding: '10px 24px', fontSize: 13, fontWeight: 600 }}
+          >
+            + Add Project
+          </button>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: 12 }}>
@@ -220,27 +231,27 @@ function ProjectCard({
         </button>
       </div>
       <Link href={href} style={{ textDecoration: 'none', display: 'block' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, paddingRight: 48 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5, paddingRight: 52 }}>
           {project.hasActive && <span className="dot-active" />}
           <span style={{
-            fontWeight: 600, fontSize: 15, color: 'var(--text)',
+            fontWeight: 700, fontSize: 15, color: 'var(--text)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            letterSpacing: '-0.01em',
+            letterSpacing: '-0.02em',
           }}>
             {project.displayName}
           </span>
         </div>
         <p style={{
-          margin: '0 0 14px', fontSize: 12, color: 'var(--text3)',
+          margin: '0 0 14px', fontSize: 11, color: 'var(--text3)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           fontFamily: 'ui-monospace, monospace',
         }}>
           {project.decodedPath}
         </p>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
           <span className="chip">{project.sessionCount} session{project.sessionCount !== 1 ? 's' : ''}</span>
           {project.latestMtime > 0 && <span className="chip">{formatRelative(project.latestMtime)}</span>}
-          {project.hasActive && <span className="chip chip-green">Live</span>}
+          {project.hasActive && <span className="chip chip-green">● Live</span>}
         </div>
       </Link>
     </div>

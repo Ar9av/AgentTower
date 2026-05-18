@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 /* ══════════════════════════════════════════════════════════════════
@@ -37,6 +38,17 @@
   --shadow-card: 0 4px 24px rgba(0,0,0,0.35);
   --shadow-lg:   0 8px 40px rgba(0,0,0,0.45);
 
+  /* surface/border aliases used by charts & tooltips */
+  --surface: #1a2133;
+  --border:  rgba(255,255,255,0.10);
+
+  /* accent glow + dim helpers */
+  --accent-glow: rgba(91,163,255,0.25);
+  --accent-dim:  rgba(91,163,255,0.12);
+
+  /* gradient text */
+  --gradient-text: linear-gradient(135deg, #7ec8ff 0%, #5ba3ff 40%, #c084fc 100%);
+
   /* orbs */
   --orb1-color: rgba(30,80,200,0.28);
   --orb2-color: rgba(100,40,200,0.22);
@@ -66,6 +78,9 @@
     --green: #2d6e3e; --red: #b83232; --yellow: #9a6c00; --purple: #6b3fa0;
     --shadow-card: 0 2px 12px rgba(60,30,0,0.08); --shadow-lg: 0 4px 24px rgba(60,30,0,0.12);
     --orb1-color: rgba(220,130,60,0.14); --orb2-color: rgba(200,80,40,0.10); --orb3-color: rgba(240,160,80,0.10);
+    --surface: #ede9e3; --border: rgba(60,30,0,0.09);
+    --accent-glow: rgba(194,81,10,0.18); --accent-dim: rgba(194,81,10,0.08);
+    --gradient-text: linear-gradient(135deg, #e06020 0%, #c2510a 50%, #7c3aed 100%);
   }
 }
 
@@ -105,6 +120,13 @@
   --shadow-card: 0 2px 12px rgba(60,30,0,0.08);
   --shadow-lg:   0 4px 24px rgba(60,30,0,0.12);
 
+  --surface: #ede9e3;
+  --border:  rgba(60,30,0,0.09);
+
+  --accent-glow: rgba(194,81,10,0.18);
+  --accent-dim:  rgba(194,81,10,0.08);
+  --gradient-text: linear-gradient(135deg, #e06020 0%, #c2510a 50%, #7c3aed 100%);
+
   --orb1-color: rgba(220,130,60,0.14);
   --orb2-color: rgba(200,80,40,0.10);
   --orb3-color: rgba(240,160,80,0.10);
@@ -119,12 +141,22 @@ body {
   background: var(--bg-mesh);
   background-attachment: fixed;
   color: var(--text);
-  font-family: system-ui, -apple-system, 'SF Pro Display', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, 'SF Pro Display', sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   margin: 0;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   transition: background 0.25s ease, color 0.25s ease;
 }
+
+/* Focus ring — visible only for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+:focus:not(:focus-visible) { outline: none; }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -278,6 +310,98 @@ textarea.glass-input { font-family: inherit; resize: none; }
 .chip-yellow { background: color-mix(in srgb, var(--yellow) 12%, transparent); border-color: color-mix(in srgb, var(--yellow) 30%, transparent); color: var(--yellow); }
 .chip-red    { background: color-mix(in srgb, var(--red)    12%, transparent); border-color: color-mix(in srgb, var(--red)    30%, transparent); color: var(--red); }
 .chip-blue   { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--accent); }
+
+/* ══════════════════════════════════════════════════════════════════
+   Gradient text
+══════════════════════════════════════════════════════════════════ */
+.gradient-text {
+  background: var(--gradient-text);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Nav links — inline inside the <nav> bar
+══════════════════════════════════════════════════════════════════ */
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2);
+  text-decoration: none;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  transition: color 0.14s, background 0.14s, border-color 0.14s;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 34px;
+}
+@media (hover: hover) {
+  .nav-link:hover {
+    color: var(--text);
+    background: var(--glass-bg-hover);
+    border-color: var(--glass-border);
+  }
+}
+.nav-link-active {
+  color: var(--accent) !important;
+  background: var(--accent-dim) !important;
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent) !important;
+  font-weight: 600 !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Stat card — used in analytics and other dashboards
+══════════════════════════════════════════════════════════════════ */
+.stat-card {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--specular), var(--shadow-card);
+  border-radius: 14px;
+  padding: 18px 22px;
+  flex: 1;
+  min-width: 130px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.stat-card:hover {
+  border-color: var(--glass-border-hi);
+  box-shadow: var(--specular), var(--shadow-lg);
+}
+.stat-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 8px;
+}
+.stat-card-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-feature-settings: 'tnum';
+  color: var(--text);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Section heading
+══════════════════════════════════════════════════════════════════ */
+.section-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Page fade-in */
+main { animation: fadeIn 0.18s ease; }
 
 /* ══════════════════════════════════════════════════════════════════
    Active dot

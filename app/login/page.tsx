@@ -52,18 +52,18 @@ export default function LoginPage() {
         zIndex: 1,
       }}>
         {/* Logo mark */}
-        <div style={{ marginBottom: 28 }}>
+        <div style={{ marginBottom: 30 }}>
           <div style={{ marginBottom: 16 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="https://cdn-icons-png.flaticon.com/512/3016/3016606.png"
-              alt="AgentTower"
-              width={48}
-              height={48}
-              style={{ filter: 'brightness(0) invert(1)', opacity: 0.8 }}
-            />
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+              style={{ color: 'var(--accent)' }}>
+              <rect x="5" y="2" width="14" height="20" rx="2"/>
+              <path d="M5 9h14"/>
+              <path d="M5 16h14"/>
+              <path d="M9 22v-6h6v6"/>
+            </svg>
           </div>
-          <h1 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em' }}>
+          <h1 className="gradient-text" style={{ margin: '0 0 5px', fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em' }}>
             AgentTower
           </h1>
           <p style={{ margin: 0, color: 'var(--text2)', fontSize: 14 }}>

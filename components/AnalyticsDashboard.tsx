@@ -33,9 +33,9 @@ function fmt(usd: number) {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="glass" style={{ borderRadius: 12, padding: '16px 20px', flex: 1, minWidth: 140 }}>
-      <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em' }}>{value}</div>
+    <div className="stat-card">
+      <div className="stat-card-label">{label}</div>
+      <div className="stat-card-value">{value}</div>
     </div>
   )
 }
@@ -57,8 +57,8 @@ export default function AnalyticsDashboard() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>Analytics</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em' }}>Analytics</h1>
         <div style={{ display: 'flex', gap: 6 }}>
           {(['daily', 'weekly', 'monthly'] as Range[]).map(r => (
             <button
@@ -66,11 +66,13 @@ export default function AnalyticsDashboard() {
               onClick={() => setRange(r)}
               className="glass-btn"
               style={{
-                padding: '5px 12px',
+                padding: '5px 14px',
                 fontSize: 12,
                 minHeight: 32,
-                background: range === r ? 'var(--accent)' : undefined,
-                color: range === r ? '#fff' : undefined,
+                fontWeight: range === r ? 600 : 500,
+                background: range === r ? 'var(--accent-dim)' : undefined,
+                color: range === r ? 'var(--accent)' : 'var(--text2)',
+                borderColor: range === r ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : undefined,
               }}
             >
               {r.charAt(0).toUpperCase() + r.slice(1)}
@@ -122,8 +124,8 @@ export default function AnalyticsDashboard() {
                   />
                   <Tooltip
                     contentStyle={{
-                      background: 'var(--surface)',
-                      border: '1px solid var(--border)',
+                      background: 'var(--bg2)',
+                      border: '1px solid var(--glass-border)',
                       borderRadius: 8,
                       fontSize: 12,
                       color: 'var(--text)',
@@ -173,8 +175,8 @@ export default function AnalyticsDashboard() {
                   />
                   <Tooltip
                     contentStyle={{
-                      background: 'var(--surface)',
-                      border: '1px solid var(--border)',
+                      background: 'var(--bg2)',
+                      border: '1px solid var(--glass-border)',
                       borderRadius: 8,
                       fontSize: 12,
                       color: 'var(--text)',
@@ -183,7 +185,7 @@ export default function AnalyticsDashboard() {
                   />
                   <Bar dataKey="cost" radius={[0, 4, 4, 0]}>
                     {data.byProject.filter(p => p.cost > 0).map((_, i) => (
-                      <Cell key={i} fill={i === 0 ? 'var(--accent)' : 'var(--border)'} />
+                      <Cell key={i} fill={i === 0 ? 'var(--accent)' : 'var(--glass-border-hi)'} />
                     ))}
                   </Bar>
                 </BarChart>
