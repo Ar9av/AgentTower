@@ -803,8 +803,33 @@ export function resolveProjectPath(dirName: string): string {
   for (const p of Object.keys(meta)) {
     if (encodeProjectPath(p) === dirName && fs.existsSync(p)) return p
   }
-  // Fall back to decoded path (ambiguous for hyphenated names, but best effort).
+  // Walk the filesystem to resolve ambiguous hyphens (e.g. 'prismor-dev' vs 'prismor/dev').
+  const fsResolved = fsWalkResolve(dirName)
+  if (fsResolved) return fsResolved
+  // Last resort: naive decode (may be wrong for hyphenated dir names).
   return decodeProjectPath(dirName)
+}
+
+function fsWalkResolve(dirName: string): string | null {
+  const withPlaceholder = dirName.replace(/--/g, '\x00')
+  const parts = withPlaceholder.split('-').map(p => p.replace(/\x00/g, '.'))
+
+  function dfs(idx: number, currentPath: string): string | null {
+    if (idx >= parts.length) return currentPath || null
+    if (parts[idx] === '' && idx === 0) return dfs(1, '')
+    for (let end = idx; end < parts.length; end++) {
+      const segment = parts.slice(idx, end + 1).join('-')
+      if (!segment) continue
+      const nextPath = currentPath + '/' + segment
+      if (fs.existsSync(nextPath)) {
+        const result = dfs(end + 1, nextPath)
+        if (result !== null) return result
+      }
+    }
+    return null
+  }
+
+  return dfs(0, '')
 }
 
 /** Find a session file by full ID or prefix. Returns { sessionId, filepath, projectDirName } or null. */

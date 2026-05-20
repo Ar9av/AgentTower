@@ -518,12 +518,13 @@ export default function LiveSession({
         <button
           className="hide-mobile"
           onClick={() => {
-            navigator.clipboard?.writeText(sessionId).then(() => {
+            const cmd = `cd ${projectPath} && claude --resume ${sessionId}`
+            navigator.clipboard?.writeText(cmd).then(() => {
               setCopiedId(true)
               setTimeout(() => setCopiedId(false), 1200)
             })
           }}
-          title={copiedId ? 'Copied!' : `Copy session ID: ${sessionId}`}
+          title={copiedId ? 'Copied!' : `Copy resume command for session ${sessionId}`}
           style={{
             fontFamily: 'ui-monospace, monospace', fontSize: 11,
             color: copiedId ? 'var(--green)' : 'var(--text3)',

@@ -42,8 +42,11 @@ function CodeBlock({ code }: { code: string }) {
 
 // ── Inline segments (shared by TextContent and table cells) ──────────────────
 function renderInline(line: string): React.ReactNode[] {
-  const segments = line.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/)
+  const segments = line.split(/(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/)
   return segments.map((seg, i) => {
+    const linkMatch = seg.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+    if (linkMatch)
+      return <a key={i} href={linkMatch[2]} target="_blank" rel="noreferrer" style={{ color: 'var(--accent, #7eb8f7)', textDecoration: 'underline', wordBreak: 'break-all' }}>{linkMatch[1]}</a>
     if (seg.startsWith('`') && seg.endsWith('`') && seg.length > 2)
       return <code key={i} style={{ background: 'var(--bg3)', padding: '1px 4px', borderRadius: 4, fontSize: 13, fontFamily: 'ui-monospace, monospace' }}>{seg.slice(1, -1)}</code>
     if (seg.startsWith('**') && seg.endsWith('**') && seg.length > 4)
@@ -148,7 +151,17 @@ function TextContent({ text }: { text: string }) {
       continue
     }
     flushTable()
-    parts.push(<span key={key++}>{renderInline(line)}<br /></span>)
+    const h3 = line.match(/^### (.+)/)
+    const h2 = line.match(/^## (.+)/)
+    const h1 = line.match(/^# (.+)/)
+    if (h1)
+      parts.push(<h1 key={key++} style={{ fontSize: 18, fontWeight: 700, margin: '12px 0 4px', color: 'var(--text)' }}>{renderInline(h1[1])}</h1>)
+    else if (h2)
+      parts.push(<h2 key={key++} style={{ fontSize: 16, fontWeight: 700, margin: '10px 0 4px', color: 'var(--text)' }}>{renderInline(h2[1])}</h2>)
+    else if (h3)
+      parts.push(<h3 key={key++} style={{ fontSize: 14, fontWeight: 700, margin: '8px 0 4px', color: 'var(--text)' }}>{renderInline(h3[1])}</h3>)
+    else
+      parts.push(<span key={key++}>{renderInline(line)}<br /></span>)
   }
   flushTable()
   if (inFence && fenceLines.length) flushFence()

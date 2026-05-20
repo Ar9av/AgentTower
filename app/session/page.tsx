@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import path from 'path'
 import { getSessionToken, validateSession } from '@/lib/auth'
-import { parseJsonlFilePaginated, decodeB64, safePath, getClaudeDir, getSessionId, decodeProjectPath } from '@/lib/claude-fs'
+import { parseJsonlFilePaginated, decodeB64, safePath, getClaudeDir, getSessionId, resolveProjectPath } from '@/lib/claude-fs'
 import { scanClaudeSessions, getProcessState } from '@/lib/process'
 import Nav from '@/components/Nav'
 import LiveSession from '@/components/LiveSession'
@@ -32,7 +32,7 @@ export default async function SessionPage({ searchParams }: Props) {
   const pid = proc?.pid ?? null
 
   const projectDirName = path.basename(path.dirname(filepath))
-  const projectPath = proc?.cwd ?? decodeProjectPath(projectDirName)
+  const projectPath = proc?.cwd ?? resolveProjectPath(projectDirName)
 
   return (
     <>
