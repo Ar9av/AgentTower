@@ -15,6 +15,17 @@ export async function GET(req: NextRequest) {
 
   const encoded = req.nextUrl.searchParams.get('f') ?? ''
   const filepath = decodeB64(encoded)
+
+  // OpenCode sessions are stored in SQLite and have no live updates
+  if (filepath.startsWith('opencode:')) {
+    return new Response(': opencode session — no live tail\n\n', {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+      },
+    })
+  }
+
   if (!safePath(filepath, getClaudeDir())) {
     return new Response('Forbidden', { status: 403 })
   }

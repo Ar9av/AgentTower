@@ -1,8 +1,10 @@
 import { redirect } from 'next/navigation'
 import { getSessionToken, validateSession } from '@/lib/auth'
 import { discoverProjects } from '@/lib/claude-fs'
+import { discoverOpenCodeProjects } from '@/lib/opencode-fs'
 import Nav from '@/components/Nav'
 import ProjectsView from '@/components/ProjectsView'
+import type { ProjectInfo } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,7 +12,10 @@ export default async function ProjectsPage() {
   const token = await getSessionToken()
   if (!validateSession(token)) redirect('/login')
 
-  const projects = discoverProjects()
+  const claude:   ProjectInfo[] = discoverProjects().map(p => ({ ...p, source: 'claude'   as const }))
+  const opencode: ProjectInfo[] = discoverOpenCodeProjects()
+
+  const projects = [...claude, ...opencode].sort((a, b) => b.latestMtime - a.latestMtime)
 
   return (
     <>

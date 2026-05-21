@@ -293,6 +293,7 @@ export interface RecentSession {
   isActive: boolean
   currentActivity: string | null  // last tool name, "thinking", "writing", or null
   parentSessionId: string | null  // set if this was spawned as a subagent
+  source: 'claude' | 'opencode'
 }
 
 /** Read the parentSessionId from the first JSONL line (for subagent detection). */
@@ -398,6 +399,7 @@ export function getRecentSessions(limit = 20): RecentSession[] {
         isActive,
         currentActivity: isActive ? readCurrentActivity(filepath) : null,
         parentSessionId: readParentSessionId(filepath),
+        source: 'claude' as const,
       })
     }
   }

@@ -69,6 +69,7 @@ export interface ProjectInfo {
   sessionCount: number
   latestMtime: number      // ms timestamp
   hasActive: boolean
+  source?: 'claude' | 'opencode'  // defaults to 'claude' when absent
 }
 
 export interface SessionMeta {
@@ -99,6 +100,7 @@ export interface SessionInfo {
   gitBranch?: string
   estimatedCostUsd?: number
   currentActivity?: string | null
+  source?: 'claude' | 'opencode'  // defaults to 'claude' when absent
 }
 
 // ─── Paginated session response ────────────────────────────────────────────
