@@ -17,6 +17,7 @@ interface Props {
   pid: number | null
   processState: ProcState
   scrollTarget?: string
+  source?: 'claude' | 'opencode'
 }
 
 function lastRole(messages: ParsedMessage[]): 'user' | 'assistant' | null {
@@ -34,7 +35,9 @@ export default function LiveSession({
   pid: initialPid,
   processState: initialProcState,
   scrollTarget,
+  source = 'claude',
 }: Props) {
+  const isOpenCode = source === 'opencode'
   // ── message state ─────────────────────────────────────────────────────────
   const [firstMessage, setFirstMessage]   = useState<ParsedMessage | null>(initialData.firstMessage)
   const [messages, setMessages]           = useState<ParsedMessage[]>(initialData.messages)
@@ -118,6 +121,7 @@ export default function LiveSession({
 
   // ── SSE tail ──────────────────────────────────────────────────────────────
   useEffect(() => {
+    if (isOpenCode) return  // OpenCode sessions are static; no live tail
     const es = new EventSource(`/api/tail?f=${encodedFilepath}`)
     es.onopen  = () => setConnected(true)
     es.onerror = () => setConnected(false)
@@ -172,10 +176,10 @@ export default function LiveSession({
   }, [pid, messages])
 
   useEffect(() => {
-    if (!pid) return
+    if (!pid || isOpenCode) return
     const id = setInterval(pollProcessState, 3000)
     return () => clearInterval(id)
-  }, [pid, pollProcessState])
+  }, [pid, isOpenCode, pollProcessState])
 
   // ── Load earlier messages ─────────────────────────────────────────────────
   async function loadMore() {
@@ -550,15 +554,21 @@ export default function LiveSession({
           }}
         />
 
-        {/* Live dot */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span className={connected ? 'dot-live' : ''} style={!connected ? {
-            width: 6, height: 6, borderRadius: '50%', background: 'var(--text3)', display: 'inline-block',
-          } : {}} />
-          <span style={{ fontSize: 12, color: connected ? 'var(--green)' : 'var(--text3)' }}>
-            {connected ? 'Live' : '…'}
+        {/* Source badge / live dot */}
+        {isOpenCode ? (
+          <span className="chip" style={{ fontSize: 11, background: 'rgba(99,102,241,0.15)', color: 'var(--text2)' }}>
+            opencode
           </span>
-        </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span className={connected ? 'dot-live' : ''} style={!connected ? {
+              width: 6, height: 6, borderRadius: '50%', background: 'var(--text3)', display: 'inline-block',
+            } : {}} />
+            <span style={{ fontSize: 12, color: connected ? 'var(--green)' : 'var(--text3)' }}>
+              {connected ? 'Live' : '…'}
+            </span>
+          </div>
+        )}
 
         {/* Status + controls — pushed right */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -593,7 +603,7 @@ export default function LiveSession({
           {isPaused && <span className="chip chip-yellow">Paused</span>}
           {isDead && <span className="chip">{wasInterrupted ? 'Interrupted' : 'Done'}</span>}
 
-          {isRunning && pid && (
+          {!isOpenCode && isRunning && pid && (
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="chip chip-yellow" style={{ cursor: 'pointer', padding: '3px 10px' }}
                 onClick={() => fetch('/api/pause', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) }).then(() => setProcState('paused'))}>
@@ -602,7 +612,7 @@ export default function LiveSession({
               <KillButton pid={pid} onKill={() => { setProcState('dead'); setWasInterrupted(true) }} />
             </div>
           )}
-          {isPaused && pid && (
+          {!isOpenCode && isPaused && pid && (
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="chip chip-green" onClick={resumeProcess} style={{ cursor: 'pointer', padding: '3px 10px' }}>Resume</button>
               <KillButton pid={pid} onKill={() => { setProcState('dead'); setWasInterrupted(true) }} />
@@ -625,14 +635,16 @@ export default function LiveSession({
               </div>
               <div id={firstMessage.uuid} className="msg-row">
               <MessageBlock message={firstMessage} encodedFilepath={encodedFilepath} toolResultMap={toolResultMap} />
-              <button
-                className="msg-fork-btn"
-                onClick={() => handleFork(firstMessage.uuid)}
-                disabled={!!forking}
-                title="Fork session from this message"
-              >
-                {forking === firstMessage.uuid ? '…' : '⑃ fork here'}
-              </button>
+              {!isOpenCode && (
+                <button
+                  className="msg-fork-btn"
+                  onClick={() => handleFork(firstMessage.uuid)}
+                  disabled={!!forking}
+                  title="Fork session from this message"
+                >
+                  {forking === firstMessage.uuid ? '…' : '⑃ fork here'}
+                </button>
+              )}
               </div>
 
               {/* Load more / hidden count divider */}
@@ -698,7 +710,7 @@ export default function LiveSession({
             displayMessages.map(msg => (
               <div key={msg.uuid} id={msg.uuid} className="msg-row">
                 <MessageBlock message={msg} encodedFilepath={encodedFilepath} toolResultMap={toolResultMap} />
-                {!msg.uuid.startsWith('__optimistic__') && (
+                {!isOpenCode && !msg.uuid.startsWith('__optimistic__') && (
                   <button
                     className="msg-fork-btn"
                     onClick={() => handleFork(msg.uuid)}
@@ -774,16 +786,28 @@ export default function LiveSession({
       </div>
 
       {/* ── Bottom bar ────────────────────────────────────────────────── */}
-      <BottomBar
-        procState={procState} wasInterrupted={wasInterrupted}
-        inputText={inputText} setInputText={setInputText}
-        sending={sending} isThinking={isThinking}
-        attachedImage={attachedImage}
-        onAttachImage={setAttachedImage}
-        onSendInput={sendInput} onKillAndRestart={killAndRestart}
-        onResumeProcess={resumeProcess} onStopAndResend={stopAndResend}
-        projectPath={projectPath} pid={pid}
-      />
+      {isOpenCode ? (
+        <div className="glass-lg" style={{
+          flexShrink: 0, borderLeft: 'none', borderRight: 'none', borderBottom: 'none',
+          borderRadius: 0, padding: '10px clamp(12px,4vw,24px)',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+            Read-only — OpenCode sessions cannot be continued from AgentTower
+          </span>
+        </div>
+      ) : (
+        <BottomBar
+          procState={procState} wasInterrupted={wasInterrupted}
+          inputText={inputText} setInputText={setInputText}
+          sending={sending} isThinking={isThinking}
+          attachedImage={attachedImage}
+          onAttachImage={setAttachedImage}
+          onSendInput={sendInput} onKillAndRestart={killAndRestart}
+          onResumeProcess={resumeProcess} onStopAndResend={stopAndResend}
+          projectPath={projectPath} pid={pid}
+        />
+      )}
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }

@@ -2,12 +2,14 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getSessionToken, validateSession } from '@/lib/auth'
 import { listSessions, decodeB64, encodeB64, resolveProjectPath, detectContinuationChains } from '@/lib/claude-fs'
+import { listOpenCodeSessions, openCodeDirectory, isOpenCodePath } from '@/lib/opencode-fs'
 import { getProjectMeta } from '@/lib/project-meta'
 import { loadSessionTags } from '@/lib/session-tags'
 import Nav from '@/components/Nav'
 import ProcessControls from '@/components/ProcessControls'
 import NewSessionForm from '@/components/NewSessionForm'
 import SessionTagsButton from '@/components/SessionTagsButton'
+import type { SessionInfo } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,20 +26,69 @@ export default async function ProjectPage({ searchParams }: Props) {
   if (!encoded) redirect('/projects')
 
   const dirName = decodeB64(encoded)
-  const sessions = listSessions(dirName)
-  const projectPath = resolveProjectPath(dirName)
-  const meta = getProjectMeta(projectPath)
-  const title = meta?.displayName || projectPath.split('/').pop() || projectPath
-  const chains = detectContinuationChains(dirName)
-  const tagStore = loadSessionTags()
 
-  // Build reverse map: parentId → childId
+  // ── OpenCode project ────────────────────────────────────────────────────
+  if (isOpenCodePath(dirName)) {
+    const directory = openCodeDirectory(dirName)
+    const sessions  = listOpenCodeSessions(directory)
+    const title     = directory.split('/').pop() || directory
+
+    return (
+      <>
+        <Nav />
+        <main style={{ padding: '32px 28px', maxWidth: 1100, margin: '0 auto', width: '100%' }}>
+          <div style={{ marginBottom: 28 }}>
+            <Link href="/projects" style={{ color: 'var(--text2)', fontSize: 13, textDecoration: 'none' }}>
+              ← Projects
+            </Link>
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <h1 style={{ margin: '0 0 3px', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>
+                  {title}
+                </h1>
+                <span className="chip" style={{ fontSize: 11, background: 'rgba(99,102,241,0.15)', color: 'var(--text2)' }}>
+                  opencode
+                </span>
+              </div>
+              <p style={{ margin: 0, color: 'var(--text3)', fontSize: 12, fontFamily: 'ui-monospace, monospace' }}>
+                {directory}
+              </p>
+            </div>
+          </div>
+
+          <section>
+            <h2 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Sessions · {sessions.length}
+            </h2>
+            {sessions.length === 0 ? (
+              <p style={{ color: 'var(--text2)', fontSize: 14 }}>No sessions found.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {sessions.map(s => (
+                  <OpenCodeSessionRow key={s.sessionId} session={s} />
+                ))}
+              </div>
+            )}
+          </section>
+        </main>
+      </>
+    )
+  }
+
+  // ── Claude project ───────────────────────────────────────────────────────
+  const sessions    = listSessions(dirName)
+  const projectPath = resolveProjectPath(dirName)
+  const meta        = getProjectMeta(projectPath)
+  const title       = meta?.displayName || projectPath.split('/').pop() || projectPath
+  const chains      = detectContinuationChains(dirName)
+  const tagStore    = loadSessionTags()
+
   const childOf = new Map<string, string>()
   for (const [child, parent] of chains.entries()) {
     childOf.set(parent, child)
   }
 
-  const active = sessions.filter(s => s.processState === 'running' || s.processState === 'paused')
+  const active  = sessions.filter(s => s.processState === 'running' || s.processState === 'paused')
   const history = sessions.filter(s => s.processState !== 'running' && s.processState !== 'paused')
 
   return (
@@ -60,7 +111,6 @@ export default async function ProjectPage({ searchParams }: Props) {
             </div>
           </div>
 
-          {/* New session — full-width block below header */}
           <div style={{ marginTop: 16 }}>
             <NewSessionForm projectPath={projectPath} />
           </div>
@@ -77,7 +127,7 @@ export default async function ProjectPage({ searchParams }: Props) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {active.map(s => (
-                <SessionRow
+                <ClaudeSessionRow
                   key={s.sessionId}
                   session={s}
                   parentId={chains.get(s.sessionId)}
@@ -101,7 +151,7 @@ export default async function ProjectPage({ searchParams }: Props) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {history.map(s => (
-                <SessionRow
+                <ClaudeSessionRow
                   key={s.sessionId}
                   session={s}
                   parentId={chains.get(s.sessionId)}
@@ -119,6 +169,43 @@ export default async function ProjectPage({ searchParams }: Props) {
   )
 }
 
+// ── OpenCode session row (read-only, no process controls) ─────────────────
+
+function OpenCodeSessionRow({ session: s }: { session: SessionInfo }) {
+  return (
+    <div className="glass" style={{ borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Link
+          href={`/session?f=${encodeB64(s.filepath)}`}
+          style={{
+            color: 'var(--text)', fontWeight: 500, fontSize: 14, textDecoration: 'none',
+            display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 7,
+          }}
+        >
+          {s.firstPrompt}
+        </Link>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="chip">Finished</span>
+          {s.estimatedCostUsd != null && s.estimatedCostUsd > 0 && (
+            <span className="chip" title="Cost">{formatCost(s.estimatedCostUsd)}</span>
+          )}
+          <span className="chip">{formatRelative(s.mtime)}</span>
+          <span className="chip" style={{ fontFamily: 'ui-monospace, monospace' }}>{s.sessionId.slice(0, 8)}</span>
+        </div>
+      </div>
+      <Link
+        href={`/session?f=${encodeB64(s.filepath)}`}
+        className="glass-btn"
+        style={{ fontSize: 13, padding: '6px 14px', flexShrink: 0 }}
+      >
+        Open →
+      </Link>
+    </div>
+  )
+}
+
+// ── Claude session row (full-featured) ────────────────────────────────────
+
 function activityLabel(processState: string, currentActivity?: string | null): string {
   if (processState === 'paused') return 'Paused'
   if (processState !== 'running') return 'Finished'
@@ -134,7 +221,7 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`
 }
 
-function SessionRow({
+function ClaudeSessionRow({
   session: s,
   parentId,
   childId,
@@ -158,26 +245,15 @@ function SessionRow({
 
   return (
     <div className="glass" style={{
-      borderRadius: 12,
-      padding: '14px 18px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 14,
+      borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14,
       borderColor: s.processState === 'running' ? 'rgba(61,214,140,0.20)' : undefined,
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <Link
           href={`/session?f=${encodeB64(s.filepath)}`}
           style={{
-            color: 'var(--text)',
-            fontWeight: 500,
-            fontSize: 14,
-            textDecoration: 'none',
-            display: 'block',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            marginBottom: 7,
+            color: 'var(--text)', fontWeight: 500, fontSize: 14, textDecoration: 'none',
+            display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 7,
           }}
         >
           {s.firstPrompt}
@@ -231,8 +307,8 @@ function SessionRow({
 
 function formatRelative(ms: number): string {
   const diff = Date.now() - ms
-  if (diff < 60_000) return 'just now'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  if (diff < 60_000)      return 'just now'
+  if (diff < 3_600_000)   return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000)  return `${Math.floor(diff / 3_600_000)}h ago`
   return `${Math.floor(diff / 86_400_000)}d ago`
 }
