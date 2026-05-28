@@ -621,6 +621,18 @@ export function listSessions(projectDirName: string): SessionInfo[] {
 
 // ─── Search ────────────────────────────────────────────────────────────────
 
+// Parse multi-keyword query: split on spaces, respect double-quoted phrases
+function parseKeywords(query: string): string[] {
+  const keywords: string[] = []
+  const re = /"([^"]+)"|(\S+)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(query)) !== null) {
+    const kw = m[1] ?? m[2]
+    if (kw.length > 0) keywords.push(kw)
+  }
+  return keywords
+}
+
 export function searchSessions(
   query: string,
   opts: { projectDirName?: string; regex?: boolean } = {}
@@ -630,6 +642,7 @@ export function searchSessions(
 
   // Build matcher
   let re: RegExp | null = null
+  let keywordRes: RegExp[] = []
   let matcher: (text: string) => boolean
   if (opts.regex) {
     try {
@@ -639,8 +652,9 @@ export function searchSessions(
       return [] // invalid regex
     }
   } else {
-    const lowerQuery = query.toLowerCase()
-    matcher = (text) => text.toLowerCase().includes(lowerQuery)
+    const keywords = parseKeywords(query)
+    keywordRes = keywords.map(kw => new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
+    matcher = (text) => keywordRes.every(kre => kre.test(text))
   }
 
   let projectDirs: string[]
@@ -697,12 +711,17 @@ export function searchSessions(
           // keep raw line
         }
 
-        // Trim context around the match
+        // Trim context around the first match
         let matchIdx = 0
         let matchLen = query.length
         if (re) {
           re.lastIndex = 0
           const m = re.exec(context)
+          if (m) { matchIdx = m.index; matchLen = m[0].length }
+        } else if (keywordRes.length > 0) {
+          const firstRe = keywordRes[0]
+          firstRe.lastIndex = 0
+          const m = firstRe.exec(context)
           if (m) { matchIdx = m.index; matchLen = m[0].length }
         } else {
           matchIdx = context.toLowerCase().indexOf(query.toLowerCase())

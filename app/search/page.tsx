@@ -6,10 +6,28 @@ import Nav from '@/components/Nav'
 import { SearchResult, ProjectInfo } from '@/lib/types'
 import { Suspense } from 'react'
 
+function parseKeywords(query: string): string[] {
+  const keywords: string[] = []
+  const re = /"([^"]+)"|(\S+)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(query)) !== null) {
+    const kw = m[1] ?? m[2]
+    if (kw.length > 0) keywords.push(kw)
+  }
+  return keywords
+}
+
 function highlight(text: string, q: string, isRegex: boolean): React.ReactNode {
   if (!q) return text
   try {
-    const re = new RegExp(isRegex ? q : q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    let pattern: string
+    if (isRegex) {
+      pattern = q
+    } else {
+      const keywords = parseKeywords(q)
+      pattern = keywords.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+    }
+    const re = new RegExp(pattern, 'gi')
     const parts: React.ReactNode[] = []
     let last = 0
     let m: RegExpExecArray | null
@@ -130,7 +148,7 @@ function SearchInner() {
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search across all sessions…"
+            placeholder='Search sessions… (space = AND, "exact phrase" in quotes)'
             autoFocus
             style={{
               width: '100%',
@@ -146,6 +164,11 @@ function SearchInner() {
           {regexError && (
             <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 4, paddingLeft: 2 }}>
               Invalid regex: {regexError}
+            </div>
+          )}
+          {!regexMode && !regexError && query.trim().includes(' ') && (
+            <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4, paddingLeft: 2 }}>
+              Matching lines that contain all {parseKeywords(query).length} terms
             </div>
           )}
         </div>
@@ -259,6 +282,11 @@ function SearchInner() {
           <div style={{ textAlign: 'center', color: 'var(--text2)', marginTop: 60 }}>
             No results found for &ldquo;{query}&rdquo;
             {filterProject ? ` in ${projects.find(p => p.dirName === filterProject)?.displayName ?? filterProject}` : ''}
+            {!regexMode && parseKeywords(query).length > 1 && (
+              <div style={{ fontSize: 12, marginTop: 8 }}>
+                Tip: all {parseKeywords(query).length} terms must appear on the same message line. Try fewer keywords.
+              </div>
+            )}
           </div>
         )}
       </main>
