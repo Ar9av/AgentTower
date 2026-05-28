@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Nav from '@/components/Nav'
@@ -49,6 +49,82 @@ function highlight(text: string, q: string, isRegex: boolean): React.ReactNode {
   }
 }
 
+// Minimal markdown renderer: bold, inline code, headers, bullet lists
+function renderMarkdown(text: string): React.ReactNode {
+  const lines = text.split('\n')
+  let key = 0
+  return lines.map(line => {
+    const trimmed = line.trimStart()
+
+    // Header
+    const hm = trimmed.match(/^(#{1,3})\s+(.+)/)
+    if (hm) {
+      const level = hm[1].length
+      const sizes: Record<number, string> = { 1: '16px', 2: '14px', 3: '13px' }
+      return (
+        <div key={key++} style={{ fontWeight: 700, fontSize: sizes[level] ?? '13px', color: 'var(--text)', marginTop: 12, marginBottom: 4 }}>
+          {renderInline(hm[2])}
+        </div>
+      )
+    }
+
+    // Bullet
+    const bm = trimmed.match(/^[-*]\s+(.+)/)
+    if (bm) {
+      return (
+        <div key={key++} style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 13, color: 'var(--text)' }}>
+          <span style={{ color: 'var(--accent)', flexShrink: 0 }}>•</span>
+          <span>{renderInline(bm[1])}</span>
+        </div>
+      )
+    }
+
+    // Numbered list
+    const nm = trimmed.match(/^(\d+)\.\s+(.+)/)
+    if (nm) {
+      return (
+        <div key={key++} style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 13, color: 'var(--text)' }}>
+          <span style={{ color: 'var(--accent)', flexShrink: 0, minWidth: 16 }}>{nm[1]}.</span>
+          <span>{renderInline(nm[2])}</span>
+        </div>
+      )
+    }
+
+    // Empty line
+    if (trimmed === '') return <div key={key++} style={{ height: 6 }} />
+
+    return (
+      <div key={key++} style={{ fontSize: 13, color: 'var(--text)', marginTop: 2 }}>
+        {renderInline(line)}
+      </div>
+    )
+  })
+}
+
+function renderInline(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = []
+  const re = /(`[^`]+`|\*\*[^*]+\*\*)/g
+  let last = 0
+  let k = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index))
+    const token = m[0]
+    if (token.startsWith('`')) {
+      parts.push(
+        <code key={k++} style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.9em', background: 'var(--bg)', padding: '1px 4px', borderRadius: 3 }}>
+          {token.slice(1, -1)}
+        </code>
+      )
+    } else {
+      parts.push(<strong key={k++}>{token.slice(2, -2)}</strong>)
+    }
+    last = m.index + token.length
+  }
+  if (last < text.length) parts.push(text.slice(last))
+  return <>{parts}</>
+}
+
 function encodeFilepath(filepath: string): string {
   return btoa(unescape(encodeURIComponent(filepath)))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
@@ -65,6 +141,14 @@ function SearchInner() {
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'hits'>('newest')
+
+  // AI analysis state
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiText, setAiText] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState('')
+  const aiAbortRef = useRef<AbortController | null>(null)
+  const aiScrollRef = useRef<HTMLDivElement>(null)
 
   // Fetch project list once
   useEffect(() => {
@@ -104,6 +188,66 @@ function SearchInner() {
     if (initialQ) doSearch(initialQ, '', false)
   }, [initialQ, doSearch])
 
+  // Close AI panel when query changes
+  useEffect(() => {
+    setAiOpen(false)
+    setAiText('')
+    setAiError('')
+    aiAbortRef.current?.abort()
+  }, [query, filterProject])
+
+  // Auto-scroll AI panel while streaming
+  useEffect(() => {
+    if (aiLoading && aiScrollRef.current) {
+      aiScrollRef.current.scrollTop = aiScrollRef.current.scrollHeight
+    }
+  }, [aiText, aiLoading])
+
+  const askClaude = useCallback(async () => {
+    if (aiLoading) {
+      aiAbortRef.current?.abort()
+      setAiLoading(false)
+      return
+    }
+    setAiOpen(true)
+    setAiText('')
+    setAiError('')
+    setAiLoading(true)
+
+    const ctrl = new AbortController()
+    aiAbortRef.current = ctrl
+
+    try {
+      const res = await fetch('/api/search/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, results }),
+        signal: ctrl.signal,
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        setAiError(err.error ?? 'Request failed')
+        setAiLoading(false)
+        return
+      }
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        setAiText(prev => prev + decoder.decode(value, { stream: true }))
+      }
+    } catch (err: unknown) {
+      if ((err as Error).name !== 'AbortError') {
+        setAiError((err as Error).message ?? 'Unknown error')
+      }
+    } finally {
+      setAiLoading(false)
+    }
+  }, [query, results, aiLoading])
+
   const bySession = results.reduce<Record<string, SearchResult[]>>((acc, r) => {
     ;(acc[r.sessionId] = acc[r.sessionId] ?? []).push(r)
     return acc
@@ -138,6 +282,8 @@ function SearchInner() {
     fontSize: 12,
     cursor: 'pointer',
   }
+
+  const hasResults = results.length > 0 && query.length >= 2
 
   return (
     <>
@@ -219,6 +365,32 @@ function SearchInner() {
             </span>
           )}
 
+          {/* Ask Claude button */}
+          {hasResults && (
+            <button
+              onClick={askClaude}
+              title="Ask Claude to summarize these results"
+              style={{
+                ...btnBase,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '3px 10px',
+                background: aiLoading
+                  ? 'color-mix(in srgb, var(--accent) 15%, var(--bg2))'
+                  : aiOpen
+                  ? 'color-mix(in srgb, var(--accent) 20%, var(--bg2))'
+                  : 'var(--bg2)',
+                color: aiOpen || aiLoading ? 'var(--accent)' : 'var(--text2)',
+                border: `1px solid ${aiOpen || aiLoading ? 'color-mix(in srgb, var(--accent) 50%, transparent)' : 'var(--border)'}`,
+                fontWeight: 500,
+              }}
+            >
+              <span style={{ fontSize: 14, lineHeight: 1 }}>✦</span>
+              {aiLoading ? 'Stop' : aiOpen ? 'Re-analyze' : 'Ask Claude'}
+            </button>
+          )}
+
           {/* Sort controls pushed right */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
             <span style={{ fontSize: 12, color: 'var(--text2)' }}>Sort:</span>
@@ -237,6 +409,66 @@ function SearchInner() {
             ))}
           </div>
         </div>
+
+        {/* AI Analysis Panel */}
+        {aiOpen && (
+          <div style={{
+            background: 'var(--bg2)',
+            border: '1px solid color-mix(in srgb, var(--accent) 35%, var(--border))',
+            borderRadius: 8,
+            marginBottom: 20,
+            overflow: 'hidden',
+          }}>
+            {/* Panel header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 14px',
+              borderBottom: '1px solid var(--border)',
+              background: 'color-mix(in srgb, var(--accent) 8%, var(--bg2))',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>
+                <span style={{ fontSize: 14 }}>✦</span>
+                Claude&rsquo;s analysis
+                {aiLoading && (
+                  <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text2)', animation: 'pulse 1.5s ease-in-out infinite' }}>
+                    thinking…
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => { setAiOpen(false); aiAbortRef.current?.abort(); setAiLoading(false) }}
+                style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Panel body */}
+            <div
+              ref={aiScrollRef}
+              style={{ padding: '14px 16px', maxHeight: 400, overflowY: 'auto', lineHeight: 1.6 }}
+            >
+              {aiError ? (
+                <div style={{ fontSize: 13, color: 'var(--red)' }}>Error: {aiError}</div>
+              ) : aiText ? (
+                renderMarkdown(aiText)
+              ) : (
+                <div style={{ fontSize: 13, color: 'var(--text2)' }}>Starting…</div>
+              )}
+              {aiLoading && aiText && (
+                <span style={{ display: 'inline-block', width: 8, height: 13, background: 'var(--accent)', borderRadius: 1, verticalAlign: 'text-bottom', opacity: 0.8, animation: 'blink 1s step-end infinite' }} />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* CSS for animations */}
+        <style>{`
+          @keyframes blink { 0%,100%{opacity:0.8} 50%{opacity:0} }
+          @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        `}</style>
 
         {/* Results */}
         {sortedSessions.map(([sessionId, hits]) => {

@@ -8,9 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "telegram": "ts-node telegram/bot.ts",
-    "mcp": "ts-node --transpile-only mcp-server.ts"
+    "mcp": "ts-node --transpile-only mcp-server.ts",
+    "orchestrator": "ts-node --transpile-only scripts/orchestrator/orchestrator-bot.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "cookies": "^0.9.1",
     "next": "16.2.3",
