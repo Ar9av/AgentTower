@@ -1,19 +1,12 @@
 import { NextRequest } from 'next/server'
 import { requireAuth } from '@/lib/auth'
-import Anthropic from '@anthropic-ai/sdk'
+import { spawnClaude } from '@/lib/spawn-claude'
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
   const authErr = await requireAuth(req)
   if (authErr) return authErr
-
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured' }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  }
 
   const { query, results } = await req.json() as {
     query: string
@@ -27,7 +20,7 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Group hits by session and cap at 60 snippets to keep the prompt lean
+  // Group hits by session, cap at 20 sessions × 3 snippets
   const bySession = new Map<string, typeof results>()
   for (const r of results) {
     const arr = bySession.get(r.sessionId) ?? []
@@ -42,43 +35,36 @@ export async function POST(req: NextRequest) {
     return `Session ${sid.slice(0, 8)} — ${project} (${date}):\n${snippets}`
   }).join('\n\n')
 
-  const prompt = `The user searched their Claude Code session archive for: "${query}"
+  const prompt = `You are helping a developer navigate their Claude Code session archive.
 
-Here are the matching snippets, grouped by session (up to 20 sessions, 3 snippets each):
+They searched for: "${query}"
+
+Here are the matching snippets grouped by session (up to 20 sessions, 3 snippets each):
 
 ${sessionBlocks}
 
 Based on these results:
-1. **What were they working on?** Infer the likely task, problem, or topic from the snippets.
-2. **Key themes** — bullet the 2–4 most important patterns or recurring ideas across the sessions.
-3. **Suggested next steps** — give 2–3 concrete things they could do now (e.g. open a specific session, refine the search with a new term, or look at a related concept).
+1. **What were they working on?** Infer the likely task, problem, or topic.
+2. **Key themes** — bullet the 2–4 most important patterns or recurring ideas.
+3. **Suggested next steps** — give 2–3 concrete things they could do now (e.g. open a specific session, refine the search, look at a related concept).
 
-Be specific and direct. Reference actual content from the snippets where it helps.`
+Be specific and direct. Reference actual content from the snippets where helpful. Use plain markdown.`
 
-  const stream = await client.messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: 'You are a concise assistant helping a developer navigate their Claude Code session archive. Answer in plain markdown with short, scannable sections.',
-    messages: [{ role: 'user', content: prompt }],
-  })
-
-  const encoder = new TextEncoder()
   const readable = new ReadableStream({
-    async start(controller) {
-      try {
-        for await (const chunk of stream) {
-          if (
-            chunk.type === 'content_block_delta' &&
-            chunk.delta.type === 'text_delta'
-          ) {
-            controller.enqueue(encoder.encode(chunk.delta.text))
-          }
-        }
-      } catch (err) {
-        controller.error(err)
-      } finally {
+    start(controller) {
+      const proc = spawnClaude(['-p', prompt], { stdio: ['ignore', 'pipe', 'ignore'] })
+
+      proc.stdout!.on('data', (chunk: Buffer) => {
+        controller.enqueue(chunk)
+      })
+
+      proc.on('close', () => {
         controller.close()
-      }
+      })
+
+      proc.on('error', (err: Error) => {
+        controller.error(err)
+      })
     },
   })
 
