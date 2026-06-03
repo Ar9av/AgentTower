@@ -5,6 +5,9 @@ import Link from 'next/link'
 import { useTheme } from './ThemeProvider'
 import { useSidebar } from './SidebarProvider'
 import Notifications from './Notifications'
+import dynamic from 'next/dynamic'
+
+const BrainPanel = dynamic(() => import('./BrainPanel'), { ssr: false })
 
 // ── Inline SVG icons ────────────────────────────────────────────────────────
 function IconBarChart() {
@@ -185,6 +188,7 @@ export default function Nav() {
   const { toggle: toggleSidebar } = useSidebar()
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [brainOpen, setBrainOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -312,6 +316,27 @@ export default function Nav() {
             <IconSearch />
           </button>
 
+          {/* Brain button */}
+          <button
+            onClick={() => setBrainOpen(v => !v)}
+            className="glass-btn"
+            title="AgentTower Brain — AI assistant"
+            aria-label="Open Brain"
+            style={{
+              padding: '6px 10px', minHeight: 34,
+              display: 'flex', alignItems: 'center', gap: 5,
+              color: brainOpen ? 'var(--accent)' : undefined,
+              background: brainOpen ? 'var(--accent-dim)' : undefined,
+              borderColor: brainOpen ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : undefined,
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            <span className="hide-mobile" style={{ fontSize: 13, fontWeight: 600 }}>Brain</span>
+          </button>
+
           <Notifications />
 
           {/* Theme toggle */}
@@ -370,6 +395,9 @@ export default function Nav() {
           </form>
         </div>
       )}
+
+      {/* Brain panel */}
+      {brainOpen && <BrainPanel onClose={() => setBrainOpen(false)} />}
 
       {/* Mobile bottom tab bar */}
       <nav className="mobile-tab-bar show-mobile" aria-label="Main navigation">
