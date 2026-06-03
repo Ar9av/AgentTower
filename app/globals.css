@@ -7,52 +7,48 @@
 :root {
   color-scheme: dark;
 
-  --bg:   #080c14;
-  --bg2:  #0f1520;
-  --bg3:  #1a2133;
-  --bg-mesh: radial-gradient(ellipse 80% 60% at 20% 10%, #0f1e3a 0%, transparent 60%),
-             radial-gradient(ellipse 60% 50% at 80% 80%, #150f2e 0%, transparent 55%),
-             radial-gradient(ellipse 50% 40% at 60% 30%, #0a1a2e 0%, transparent 50%),
-             #080c14;
+  --bg:   #090909;
+  --bg2:  #111111;
+  --bg3:  #1a1a1a;
+  /* flat near-black — no blue/purple tint */
+  --bg-mesh: #090909;
 
-  --glass-bg:        rgba(255,255,255,0.055);
-  --glass-bg-hover:  rgba(255,255,255,0.09);
-  --glass-bg-active: rgba(255,255,255,0.12);
-  --glass-border:    rgba(255,255,255,0.10);
-  --glass-border-hi: rgba(255,255,255,0.18);
-  --glass-blur:      blur(20px) saturate(1.6);
-  --glass-blur-lg:   blur(32px) saturate(1.8);
-  --specular:        inset 0 1px 0 rgba(255,255,255,0.14);
+  --glass-bg:        rgba(255,255,255,0.04);
+  --glass-bg-hover:  rgba(255,255,255,0.07);
+  --glass-bg-active: rgba(255,255,255,0.11);
+  --glass-border:    rgba(255,255,255,0.08);
+  --glass-border-hi: rgba(255,255,255,0.15);
+  --glass-blur:      blur(20px) saturate(1.4);
+  --glass-blur-lg:   blur(32px) saturate(1.6);
+  --specular:        inset 0 1px 0 rgba(255,255,255,0.07);
 
-  --text:  #e8edf5;
-  --text2: #8b96a8;
-  --text3: #4a5568;
+  --text:  #ebebeb;
+  --text2: #787878;
+  --text3: #404040;
 
-  --accent:  #5ba3ff;
-  --accent2: #3d7fff;
-  --green:   #3dd68c;
-  --red:     #ff5a5a;
-  --yellow:  #f5c842;
-  --purple:  #c084fc;
+  /* Emerald green — distinctive, not blue or purple */
+  --accent:  #10b981;
+  --accent2: #059669;
+  --green:   #34d399;
+  --red:     #f87171;
+  --yellow:  #fbbf24;
+  --purple:  #a3e635;   /* lime replaces purple */
 
-  --shadow-card: 0 4px 24px rgba(0,0,0,0.35);
-  --shadow-lg:   0 8px 40px rgba(0,0,0,0.45);
+  --shadow-card: 0 4px 24px rgba(0,0,0,0.55);
+  --shadow-lg:   0 8px 40px rgba(0,0,0,0.65);
 
-  /* surface/border aliases used by charts & tooltips */
-  --surface: #1a2133;
-  --border:  rgba(255,255,255,0.10);
+  --surface: #1a1a1a;
+  --border:  rgba(255,255,255,0.08);
 
-  /* accent glow + dim helpers */
-  --accent-glow: rgba(91,163,255,0.25);
-  --accent-dim:  rgba(91,163,255,0.12);
+  --accent-glow: rgba(16,185,129,0.22);
+  --accent-dim:  rgba(16,185,129,0.10);
 
-  /* gradient text */
-  --gradient-text: linear-gradient(135deg, #7ec8ff 0%, #5ba3ff 40%, #c084fc 100%);
+  --gradient-text: linear-gradient(135deg, #6ee7b7 0%, #10b981 50%, #a3e635 100%);
 
-  /* orbs */
-  --orb1-color: rgba(30,80,200,0.28);
-  --orb2-color: rgba(100,40,200,0.22);
-  --orb3-color: rgba(20,120,180,0.18);
+  /* subtle ambient orbs — green tinted, not blue */
+  --orb1-color: rgba(16,185,129,0.07);
+  --orb2-color: rgba(5,150,105,0.05);
+  --orb3-color: rgba(52,211,153,0.04);
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -531,9 +527,13 @@ main { animation: fadeIn 0.18s ease; }
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
-  /* Session view: bottom bar sits above the tab bar */
+  /* Session view shrinks to exclude tab bar — eliminates the dead gap */
+  .session-view {
+    height: calc(100dvh - 54px - 56px) !important;
+  }
+  /* Input wrap just needs safe-area padding, NOT extra 56px (container already ends above tab bar) */
   .chat-input-wrap {
-    padding-bottom: calc(max(8px, env(safe-area-inset-bottom, 8px)) + 56px) !important;
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important;
   }
 }
 
@@ -864,6 +864,137 @@ main { animation: fadeIn 0.18s ease; }
   .session-header-chips {
     gap: 4px !important;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Model picker — segmented control
+══════════════════════════════════════════════════════════════════ */
+.model-picker {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg3);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+.model-btn {
+  padding: 4px 11px;
+  border-radius: 7px;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text3);
+  background: transparent;
+  transition: background 0.12s, color 0.12s;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+.model-btn:hover { color: var(--text2); }
+.model-btn-active {
+  background: var(--glass-bg-active) !important;
+  color: var(--accent) !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Login page — minimal dark
+══════════════════════════════════════════════════════════════════ */
+.login-root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #090909;
+  padding: 24px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.login-glow {
+  position: absolute;
+  width: 500px; height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%);
+  top: 50%; left: 50%;
+  transform: translate(-50%, -60%);
+  pointer-events: none;
+  filter: blur(40px);
+}
+.login-card {
+  width: 100%;
+  max-width: 340px;
+  position: relative;
+  z-index: 1;
+}
+.login-logo-icon {
+  width: 48px; height: 48px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 20px;
+}
+.login-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  margin: 0 0 6px;
+}
+.login-subtitle {
+  font-size: 14px;
+  color: var(--text3);
+  margin: 0 0 32px;
+}
+.login-divider {
+  height: 1px;
+  background: var(--glass-border);
+  margin-bottom: 28px;
+}
+.login-input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1.5px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 13px 16px;
+  font-size: 15px;
+  color: var(--text);
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+.login-input::placeholder { color: var(--text3); }
+.login-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.12);
+}
+.login-btn {
+  width: 100%;
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+  font-size: 15px;
+  border: none;
+  border-radius: 12px;
+  padding: 13px;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: opacity 0.15s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+  font-family: inherit;
+}
+.login-btn:hover:not(:disabled) { opacity: 0.9; }
+.login-btn:active:not(:disabled) { transform: scale(0.98); }
+.login-btn:disabled { opacity: 0.45; cursor: default; }
+.login-error {
+  margin: 8px 0 0;
+  color: var(--red);
+  font-size: 13px;
+  display: flex; align-items: center; gap: 6px;
 }
 
 /* Highlight a deep-linked message */

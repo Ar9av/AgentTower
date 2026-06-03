@@ -355,7 +355,7 @@ export default function LiveSession({
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_path: projectPath, prompt: promptText }),
+        body: JSON.stringify({ project_path: projectPath, prompt: promptText, model: MODEL_IDS[model] }),
       })
       if (res.ok) {
         const { pid: newPid } = await res.json()
@@ -396,7 +396,7 @@ export default function LiveSession({
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_path: projectPath, prompt: inputText.trim() }),
+        body: JSON.stringify({ project_path: projectPath, prompt: inputText.trim(), model: MODEL_IDS[model] }),
       })
       if (res.ok) {
         const { pid: newPid } = await res.json()
@@ -498,8 +498,23 @@ export default function LiveSession({
     })
   }, [messages, sessionFilter])
 
+  // ── Model preference — persisted in localStorage ─────────────────────────
+  const [model, setModel] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'sonnet'
+    return localStorage.getItem('claude-model') || 'sonnet'
+  })
+  function changeModel(m: string) {
+    setModel(m)
+    if (typeof window !== 'undefined') localStorage.setItem('claude-model', m)
+  }
+  const MODEL_IDS: Record<string, string> = {
+    sonnet: 'claude-sonnet-4-6',
+    opus:   'claude-opus-4-8',
+    haiku:  'claude-haiku-4-5-20251001',
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100dvh - 54px)' }}>
+    <div className="session-view" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100dvh - 54px)' }}>
 
       {/* ── Header ────────────────────────────────────────────────────── */}
       <div className="glass-lg session-header" style={{
@@ -549,6 +564,9 @@ export default function LiveSession({
             outline: 'none', width: sessionFilter ? 160 : 80, transition: 'width 0.2s ease',
           }}
         />
+
+        {/* Model picker — always visible */}
+        <ModelPicker value={model} onChange={changeModel} />
 
         {/* Live dot */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -783,6 +801,7 @@ export default function LiveSession({
         onSendInput={sendInput} onKillAndRestart={killAndRestart}
         onResumeProcess={resumeProcess} onStopAndResend={stopAndResend}
         projectPath={projectPath} pid={pid}
+        model={model} onModelChange={changeModel}
       />
 
       <style>{`
@@ -839,6 +858,30 @@ interface BarProps {
   onStopAndResend: (e: React.FormEvent) => void
   projectPath: string
   pid: number | null
+  model: string
+  onModelChange: (m: string) => void
+}
+
+function ModelPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const models = [
+    { id: 'sonnet', label: 'Sonnet' },
+    { id: 'opus',   label: 'Opus' },
+    { id: 'haiku',  label: 'Haiku' },
+  ]
+  return (
+    <div className="model-picker">
+      {models.map(m => (
+        <button
+          key={m.id}
+          type="button"
+          className={`model-btn${value === m.id ? ' model-btn-active' : ''}`}
+          onClick={() => onChange(m.id)}
+        >
+          {m.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function SendIcon() {
@@ -861,7 +904,7 @@ function SpinIcon() {
   )
 }
 
-function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending, isThinking, attachedImage, onAttachImage, onSendInput, onKillAndRestart, onResumeProcess, onStopAndResend, pid }: BarProps) {
+function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending, isThinking, attachedImage, onAttachImage, onSendInput, onKillAndRestart, onResumeProcess, onStopAndResend, pid, model, onModelChange }: BarProps) {
   const handlePaste = useImagePaste(onAttachImage)
   const canSend = !!(inputText.trim() || attachedImage)
 
@@ -997,8 +1040,9 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
             style={{ cursor: 'pointer', fontSize: 12, padding: '4px 12px', minHeight: 30 }}>
             New session ↗
           </button>
+          <ModelPicker value={model} onChange={onModelChange} />
           {wasInterrupted && (
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Session was interrupted</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Interrupted</span>
           )}
         </div>
       </form>

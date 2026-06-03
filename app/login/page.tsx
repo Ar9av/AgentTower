@@ -25,7 +25,7 @@ export default function LoginPage() {
         if (res.status === 429) {
           setError(`Too many attempts. Try again in ${data.retryAfter}s.`)
         } else {
-          setError('Invalid password')
+          setError('Incorrect password')
         }
       }
     } catch {
@@ -36,67 +36,48 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
-      {/* Ambient orbs */}
-      <div className="orb orb-1" />
-      <div className="orb orb-2" />
-      <div className="orb orb-3" />
+    <div className="login-root">
+      {/* Ambient glow */}
+      <div className="login-glow" />
 
-      {/* Glass card */}
-      <div className="glass" style={{
-        borderRadius: 20,
-        padding: '44px 40px',
-        width: '100%',
-        maxWidth: 380,
-        position: 'relative',
-        zIndex: 1,
-      }}>
-        {/* Logo mark */}
-        <div style={{ marginBottom: 30 }}>
-          <div style={{ marginBottom: 16 }}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-              style={{ color: 'var(--accent)' }}>
-              <rect x="5" y="2" width="14" height="20" rx="2"/>
-              <path d="M5 9h14"/>
-              <path d="M5 16h14"/>
-              <path d="M9 22v-6h6v6"/>
-            </svg>
-          </div>
-          <h1 className="gradient-text" style={{ margin: '0 0 5px', fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em' }}>
-            AgentTower
-          </h1>
-          <p style={{ margin: 0, color: 'var(--text2)', fontSize: 14 }}>
-            Monitor your Claude Code sessions
-          </p>
+      <div className="login-card">
+        {/* Icon */}
+        <div className="login-logo-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+            style={{ color: 'var(--accent)' }}>
+            <rect x="5" y="2" width="14" height="20" rx="2"/>
+            <path d="M5 9h14"/>
+            <path d="M5 16h14"/>
+            <path d="M9 22v-6h6v6"/>
+          </svg>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <h1 className="login-title">AgentTower</h1>
+        <p className="login-subtitle">Monitor your Claude Code sessions</p>
+
+        <div className="login-divider" />
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <input
-            className="glass-input"
+            className="login-input"
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            placeholder="Password"
+            placeholder="Enter password"
             autoFocus
             required
-            style={{
-              fontSize: 15,
-              padding: '11px 14px',
-              borderRadius: 12,
-              borderColor: error ? 'rgba(255,90,90,0.5)' : undefined,
-            }}
+            style={error ? { borderColor: 'var(--red)' } : undefined}
           />
           {error && (
-            <p style={{ margin: 0, color: 'var(--red)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <p className="login-error">
               <span>⚠</span> {error}
             </p>
           )}
           <button
             type="submit"
-            className="glass-btn-prominent"
+            className="login-btn"
             disabled={loading || !password}
-            style={{ marginTop: 4 }}
           >
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
