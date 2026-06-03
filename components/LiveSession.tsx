@@ -499,10 +499,10 @@ export default function LiveSession({
   }, [messages, sessionFilter])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100dvh - 54px)' }}>
 
       {/* ── Header ────────────────────────────────────────────────────── */}
-      <div className="glass-lg" style={{
+      <div className="glass-lg session-header" style={{
         padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
         flexShrink: 0, borderLeft: 'none', borderRight: 'none', borderTop: 'none', borderRadius: 0,
         minHeight: 48, position: 'relative', zIndex: 10,
@@ -561,7 +561,7 @@ export default function LiveSession({
         </div>
 
         {/* Status + controls — pushed right */}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className="session-header-chips" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <button
             className="chip"
             onClick={() => window.location.reload()}
@@ -841,110 +841,167 @@ interface BarProps {
   pid: number | null
 }
 
+function SendIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <line x1="12" y1="19" x2="12" y2="5"/>
+      <polyline points="5 12 12 5 19 12"/>
+    </svg>
+  )
+}
+
+function SpinIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+      style={{ animation: 'spin 0.8s linear infinite' }} aria-hidden>
+      <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+    </svg>
+  )
+}
+
 function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending, isThinking, attachedImage, onAttachImage, onSendInput, onKillAndRestart, onResumeProcess, onStopAndResend, pid }: BarProps) {
-  const base: React.CSSProperties = { flexShrink: 0, borderLeft: 'none', borderRight: 'none', borderBottom: 'none', borderRadius: 0 }
-  const pad = 'clamp(10px,3vw,16px) clamp(12px,4vw,24px)'
   const handlePaste = useImagePaste(onAttachImage)
   const canSend = !!(inputText.trim() || attachedImage)
 
   if (procState === 'running') return (
-    <div className="glass-lg" style={{ padding: pad, ...base }}>
-      <form onSubmit={onSendInput} style={{ maxWidth: 840, margin: '0 auto' }}>
-        {/* Attachment preview row */}
+    <div className="chat-input-wrap">
+      <form onSubmit={onSendInput}>
+        {/* Attachment preview */}
         {attachedImage && (
-          <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ maxWidth: 760, margin: '0 auto 8px', display: 'flex', alignItems: 'center', gap: 10,
+            padding: '8px 12px', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', borderRadius: 12 }}>
             {attachedImage.mediaType.startsWith('image/') ? (
               /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={attachedImage.dataUrl} alt="" style={{ height: 56, width: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--glass-border)', flexShrink: 0 }} />
+              <img src={attachedImage.dataUrl} alt="" style={{ height: 44, width: 44, objectFit: 'cover', borderRadius: 7, flexShrink: 0 }} />
             ) : (
-              <div style={{ height: 56, width: 56, borderRadius: 8, border: '1px solid var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>📎</div>
+              <span style={{ fontSize: 22, flexShrink: 0 }}>📎</span>
             )}
-            <span style={{ fontSize: 12, color: 'var(--text2)' }}>{attachedImage.name}</span>
-            <button type="button" onClick={() => onAttachImage(null)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', marginLeft: 'auto', fontSize: 16, padding: 4 }}>✕</button>
+            <span style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachedImage.name}</span>
+            <button type="button" onClick={() => onAttachImage(null)}
+              style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', marginLeft: 'auto', fontSize: 16, padding: '4px 6px', flexShrink: 0 }}>✕</button>
           </div>
         )}
-        <div className="bottom-bar-inputs" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+
+        <div className="chat-pill">
           <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
           <textarea
-            className="glass-input"
+            className="chat-pill-textarea"
             value={inputText}
             onChange={e => setInputText(e.target.value)}
             onPaste={handlePaste}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSendInput(e) }
             }}
-            placeholder={isThinking ? 'Claude is thinking — you can keep typing…' : 'Message Claude… (Enter to send, Shift+Enter for newline)'}
+            placeholder={isThinking ? 'Claude is thinking — send anyway or wait…' : 'Message Claude…'}
             rows={1}
-            style={{ flex: '1 1 160px', fontSize: 16, padding: '10px 16px', borderRadius: 12, resize: 'none', lineHeight: 1.5, maxHeight: 160, overflowY: 'auto' }}
           />
-          {/* Stop current task + resend — shown only when text is typed and Claude is running */}
           {inputText.trim() && pid && isThinking && (
             <button
               type="button"
               onClick={onStopAndResend}
               disabled={sending}
-              className="glass-btn"
-              style={{ width: 'auto', padding: '10px 14px', fontSize: 13, flexShrink: 0, alignSelf: 'flex-end',
-                borderColor: 'color-mix(in srgb, var(--red) 35%, transparent)', color: 'var(--red)' }}
-              title="Kill current task and start a new session with this message"
+              title="Stop current task and resend as new session"
+              style={{
+                background: 'color-mix(in srgb, var(--red) 14%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
+                color: 'var(--red)', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                padding: '5px 10px', cursor: 'pointer', flexShrink: 0, alignSelf: 'flex-end',
+                marginBottom: 1, whiteSpace: 'nowrap',
+              }}
             >
-              {sending ? '…' : '⏹ Stop & resend'}
+              {sending ? '…' : '⏹ Stop'}
             </button>
           )}
-          <button type="submit" className="glass-btn-prominent" disabled={!canSend || sending}
-            style={{ width: 'auto', padding: '10px 20px', fontSize: 14, flexShrink: 0, alignSelf: 'flex-end' }}>
-            {sending ? '…' : isThinking ? 'Send anyway' : 'Send'}
+          <button type="submit" className="chat-send-btn" disabled={!canSend || sending}
+            title={isThinking ? 'Send anyway' : 'Send message'}>
+            {sending ? <SpinIcon /> : <SendIcon />}
           </button>
         </div>
+
+        <p className="chat-hint">Enter to send · Shift+Enter for newline</p>
       </form>
     </div>
   )
 
   if (procState === 'paused') return (
-    <div className="glass-lg" style={{ padding: pad, ...base }}>
-      <div style={{ maxWidth: 840, margin: '0 auto' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 10, padding: '8px 14px',
-          background: 'color-mix(in srgb, var(--yellow) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--yellow) 28%, transparent)', borderRadius: 10, fontSize: 13, color: 'var(--yellow)' }}>
-          <span>⏸ Session is paused</span>
-          <button className="chip chip-green" onClick={onResumeProcess} style={{ cursor: 'pointer', marginLeft: 'auto', padding: '4px 14px', minHeight: 32 }}>Resume</button>
-        </div>
-        <form onSubmit={onKillAndRestart} style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          <input className="glass-input" value={inputText} onChange={e => setInputText(e.target.value)}
-            placeholder="Kill & restart with a new prompt…"
-            style={{ flex: '1 1 180px', fontSize: 15, padding: '10px 16px', borderRadius: 12 }} />
-          <button type="submit" className="glass-btn" disabled={!inputText.trim() || sending}
-            style={{ width: 'auto', padding: '10px 18px', fontSize: 14, flexShrink: 0, borderColor: 'color-mix(in srgb,var(--red) 35%,transparent)', color: 'var(--red)', minHeight: 44 }}>
-            {sending ? '…' : 'Kill & restart'}
-          </button>
-        </form>
+    <div className="chat-input-wrap">
+      <div className="chat-paused-banner">
+        <span>⏸ Session paused</span>
+        <button className="chip chip-green" onClick={onResumeProcess} style={{ cursor: 'pointer', marginLeft: 'auto', padding: '4px 14px', minHeight: 32 }}>
+          Resume
+        </button>
       </div>
+      <form onSubmit={onKillAndRestart}>
+        <div className="chat-pill">
+          <textarea
+            className="chat-pill-textarea"
+            value={inputText}
+            onChange={e => setInputText(e.target.value)}
+            placeholder="Type a new prompt to kill & restart…"
+            rows={1}
+          />
+          <button type="submit" className="chat-send-btn" disabled={!inputText.trim() || sending}
+            style={{ background: inputText.trim() ? 'color-mix(in srgb, var(--red) 80%, transparent)' : undefined }}
+            title="Kill and restart with this prompt">
+            {sending ? <SpinIcon /> : <SendIcon />}
+          </button>
+        </div>
+        <p className="chat-hint">Kills the paused session and starts fresh</p>
+      </form>
     </div>
   )
 
   return (
-    <div className="glass-lg" style={{ padding: pad, ...base }}>
-      <div style={{ maxWidth: 840, margin: '0 auto' }}>
-        <form onSubmit={onSendInput} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div className="chat-input-wrap">
+      <form onSubmit={onSendInput}>
+        {attachedImage && (
+          <div style={{ maxWidth: 760, margin: '0 auto 8px', display: 'flex', alignItems: 'center', gap: 10,
+            padding: '8px 12px', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', borderRadius: 12 }}>
+            {attachedImage.mediaType.startsWith('image/') ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={attachedImage.dataUrl} alt="" style={{ height: 44, width: 44, objectFit: 'cover', borderRadius: 7, flexShrink: 0 }} />
+            ) : (
+              <span style={{ fontSize: 22, flexShrink: 0 }}>📎</span>
+            )}
+            <span style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachedImage.name}</span>
+            <button type="button" onClick={() => onAttachImage(null)}
+              style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', marginLeft: 'auto', fontSize: 16, padding: '4px 6px', flexShrink: 0 }}>✕</button>
+          </div>
+        )}
+
+        <div className="chat-pill">
           <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
-          <input className="glass-input" value={inputText} onChange={e => setInputText(e.target.value)}
+          <textarea
+            className="chat-pill-textarea"
+            value={inputText}
+            onChange={e => setInputText(e.target.value)}
             onPaste={handlePaste}
-            placeholder={wasInterrupted ? 'Resume or start fresh…' : 'Continue thread or start new…'}
-            style={{ flex: '1 1 200px', fontSize: 14, padding: '8px 12px', borderRadius: 10, minWidth: 0, minHeight: 36 }} />
-          <button type="submit" className="glass-btn-prominent"
-            disabled={!canSend || sending}
-            title="Resume this session"
-            style={{ padding: '8px 14px', fontSize: 13, minHeight: 36 }}>
-            {sending ? '…' : 'Continue ↩'}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSendInput(e) }
+            }}
+            placeholder={wasInterrupted ? 'Resume or start fresh…' : 'Continue or start new…'}
+            rows={1}
+          />
+          <button type="submit" className="chat-send-btn" disabled={!canSend || sending}
+            title="Continue this session">
+            {sending ? <SpinIcon /> : <SendIcon />}
           </button>
-          <button type="button" className="glass-btn"
-            onClick={onKillAndRestart as unknown as React.MouseEventHandler}
+        </div>
+
+        <div className="chat-action-row">
+          <button type="button" className="chip" onClick={onKillAndRestart as unknown as React.MouseEventHandler}
             disabled={sending}
-            title="Start a new session in the same project (uses your text or 'hi' if empty)"
-            style={{ padding: '8px 14px', fontSize: 13, minHeight: 36 }}>
-            New ↗
+            title="Start a new session in the same project"
+            style={{ cursor: 'pointer', fontSize: 12, padding: '4px 12px', minHeight: 30 }}>
+            New session ↗
           </button>
-        </form>
-      </div>
+          {wasInterrupted && (
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Session was interrupted</span>
+          )}
+        </div>
+      </form>
     </div>
   )
 }

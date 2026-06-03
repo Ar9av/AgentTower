@@ -55,6 +55,20 @@ function IconPlug() {
   )
 }
 
+function IconOrchestrate() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="5" r="2"/>
+      <circle cx="5" cy="19" r="2"/>
+      <circle cx="19" cy="19" r="2"/>
+      <path d="M12 7v4"/>
+      <path d="M12 11L5 17"/>
+      <path d="M12 11l7 6"/>
+    </svg>
+  )
+}
+
 function IconSearch() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -124,6 +138,26 @@ function LogoMark() {
       <path d="M5 16h14"/>
       <path d="M9 22v-6h6v6"/>
     </svg>
+  )
+}
+
+function IconProjects() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      <polyline points="9 22 9 12 15 12 15 22"/>
+    </svg>
+  )
+}
+
+// ── Mobile tab helper ─────────────────────────────────────────────────────────
+function MobileTab({ href, icon, label, active }: { href: string; icon: React.ReactNode; label: string; active: boolean }) {
+  return (
+    <Link href={href} className={`mobile-tab${active ? ' mobile-tab-active' : ''}`} aria-label={label}>
+      <span className="mobile-tab-icon">{icon}</span>
+      <span className="mobile-tab-label">{label}</span>
+    </Link>
   )
 }
 
@@ -262,6 +296,7 @@ export default function Nav() {
         <div className="hide-mobile" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <NavLink href="/analytics" icon={<IconBarChart />} label="Analytics" active={is('/analytics')} />
           <NavLink href="/tower" icon={<IconTower />} label="Tower" active={is('/tower')} />
+          <NavLink href="/orchestrate" icon={<IconOrchestrate />} label="Orchestrate" active={is('/orchestrate')} />
           <NavLink href="/daily-brief" icon={<IconClipboard />} label="Brief" active={is('/daily-brief')} />
           <NavLink href="/integrations" icon={<IconPlug />} label="Integrations" active={is('/integrations')} />
         </div>
@@ -335,6 +370,15 @@ export default function Nav() {
           </form>
         </div>
       )}
+
+      {/* Mobile bottom tab bar */}
+      <nav className="mobile-tab-bar show-mobile" aria-label="Main navigation">
+        <MobileTab href="/projects" icon={<IconProjects />} label="Projects" active={is('/projects') || pathname === '/'} />
+        <MobileTab href="/analytics" icon={<IconBarChart />} label="Analytics" active={is('/analytics')} />
+        <MobileTab href="/tower" icon={<IconTower />} label="Tower" active={is('/tower')} />
+        <MobileTab href="/daily-brief" icon={<IconClipboard />} label="Brief" active={is('/daily-brief')} />
+        <MobileTab href="/integrations" icon={<IconPlug />} label="More" active={is('/integrations') || is('/orchestrate')} />
+      </nav>
     </>
   )
 }
