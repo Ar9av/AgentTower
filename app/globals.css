@@ -527,13 +527,11 @@ main { animation: fadeIn 0.18s ease; }
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
-  /* Session view shrinks to exclude tab bar — eliminates the dead gap */
-  .session-view {
-    height: calc(100dvh - 54px - 56px) !important;
-  }
-  /* Input wrap just needs safe-area padding, NOT extra 56px (container already ends above tab bar) */
+  /* Keep session-view at full height — shrinking it caused a body-level gap because
+     body min-height fills the remaining 56px with empty space below the session.
+     Instead, pad the chat-input-wrap to push content above the fixed tab bar. */
   .chat-input-wrap {
-    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 8px) !important;
   }
 }
 
