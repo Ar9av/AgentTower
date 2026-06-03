@@ -208,14 +208,20 @@ function ProjectCard({
         {project.hasActive && (
           <button
             onClick={e => { e.preventDefault(); e.stopPropagation(); onTail() }}
-            title="Tail live output"
-            aria-label="Tail live output"
+            title="Watch live output"
+            aria-label="Watch live output"
             style={{
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: 'var(--green)', fontSize: 13, padding: 4, borderRadius: 6,
+              background: 'color-mix(in srgb, var(--green) 12%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--green) 30%, transparent)',
+              cursor: 'pointer', color: 'var(--green)', padding: '4px 7px',
+              borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >
-            👁
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
           </button>
         )}
         <button
