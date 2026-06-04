@@ -520,6 +520,40 @@ main { animation: fadeIn 0.18s ease; }
   letter-spacing: 0.01em;
 }
 
+/* Center Brain tab — elevated prominent action */
+.mobile-tab-brain {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 0 4px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text3);
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+}
+.mobile-tab-brain-orb {
+  width: 46px; height: 46px;
+  margin-top: -18px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent);
+  color: #000;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 50%, transparent), inset 0 1px 0 rgba(255,255,255,0.25);
+  border: 3px solid var(--bg);
+  transition: transform 0.14s, box-shadow 0.14s;
+}
+.mobile-tab-brain:active .mobile-tab-brain-orb { transform: scale(0.92); }
+.mobile-tab-brain-active .mobile-tab-brain-orb {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent), 0 4px 20px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.mobile-tab-brain-active { color: var(--accent); }
+.mobile-tab-brain .mobile-tab-label { font-size: 10px; font-weight: 700; }
+
 /* Add bottom padding on mobile so content isn't hidden behind the tab bar */
 @media (max-width: 640px) {
   body > * > main,
@@ -533,6 +567,84 @@ main { animation: fadeIn 0.18s ease; }
   .chat-input-wrap {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 8px) !important;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Quick Launch — floating FAB + sheet
+══════════════════════════════════════════════════════════════════ */
+.quick-launch-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 440;
+  width: 54px; height: 54px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent);
+  color: #000;
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 8px rgba(0,0,0,0.3);
+  transition: transform 0.14s, box-shadow 0.14s, background 0.14s;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .quick-launch-fab:hover {
+    transform: scale(1.08) rotate(90deg);
+    background: var(--accent2);
+    box-shadow: 0 8px 32px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+}
+.quick-launch-fab:active { transform: scale(0.94); }
+
+/* On mobile, sit above the tab bar */
+@media (max-width: 640px) {
+  .quick-launch-fab {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    right: 16px;
+    width: 50px; height: 50px;
+  }
+}
+
+.quick-launch-sheet {
+  position: fixed;
+  z-index: 601;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, 94vw);
+  max-height: 80dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg2);
+  border: 1px solid var(--glass-border-hi);
+  border-radius: 18px;
+  box-shadow: 0 20px 70px rgba(0,0,0,0.6);
+  overflow: hidden;
+  animation: quickLaunchIn 0.18s cubic-bezier(0.4,0,0.2,1);
+}
+@keyframes quickLaunchIn {
+  from { opacity: 0; transform: translate(-50%, -46%) scale(0.97); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+/* Bottom-sheet style on mobile */
+@media (max-width: 640px) {
+  .quick-launch-sheet {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    transform: none;
+    width: 100%;
+    max-height: 88dvh;
+    border-radius: 18px 18px 0 0;
+    border-bottom: none;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    animation: quickLaunchSheetUp 0.2s cubic-bezier(0.4,0,0.2,1);
+  }
+}
+@keyframes quickLaunchSheetUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
 }
 
 /* Animations */
@@ -687,16 +799,19 @@ main { animation: fadeIn 0.18s ease; }
   pointer-events: auto;
 }
 
-/* On touch screens always show it */
+/* On touch screens always show it as a clear, tappable chip */
 @media (hover: none) {
   .msg-fork-btn {
     opacity: 1;
     pointer-events: auto;
     position: static;
     display: inline-flex;
-    margin-top: 4px;
-    font-size: 10px;
-    padding: 2px 7px;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    font-size: 11px;
+    padding: 5px 12px;
+    min-height: 28px;
   }
 }
 
@@ -816,6 +931,34 @@ main { animation: fadeIn 0.18s ease; }
 }
 @media (max-width: 640px) {
   .chat-hint { display: none; }
+}
+
+/* Pill footer — model picker + hint, always visible incl. mobile */
+.chat-pill-footer {
+  max-width: 760px;
+  margin: 7px auto 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.chat-hint-inline {
+  font-size: 11px;
+  color: var(--text3);
+  margin-left: auto;
+}
+@media (max-width: 640px) {
+  .chat-hint-inline { display: none; }
+  .chat-pill-footer { justify-content: center; }
+}
+
+/* Compact model picker for the pill footer */
+.model-picker-compact {
+  padding: 2px;
+  border-radius: 9px;
+}
+.model-picker-compact .model-btn {
+  padding: 3px 10px;
+  font-size: 11px;
 }
 
 /* Paused banner */

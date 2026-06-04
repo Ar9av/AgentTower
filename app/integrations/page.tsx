@@ -3,6 +3,7 @@ import { getSessionToken, validateSession } from '@/lib/auth'
 import Nav from '@/components/Nav'
 import TelegramIntegration from '@/components/TelegramIntegration'
 import AntigravityIntegration from '@/components/AntigravityIntegration'
+import GitHubIntegration from '@/components/GitHubIntegration'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,7 @@ export default async function IntegrationsPage() {
           </p>
         </div>
 
+        <GitHubIntegration />
         <TelegramIntegration />
         <AntigravityIntegration />
       </main>

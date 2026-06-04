@@ -316,10 +316,10 @@ export default function Nav() {
             <IconSearch />
           </button>
 
-          {/* Brain button */}
+          {/* Brain button — desktop only (mobile uses the center tab) */}
           <button
             onClick={() => setBrainOpen(v => !v)}
-            className="glass-btn"
+            className="glass-btn hide-mobile"
             title="AgentTower Brain — AI assistant"
             aria-label="Open Brain"
             style={{
@@ -334,7 +334,7 @@ export default function Nav() {
               strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
             </svg>
-            <span className="hide-mobile" style={{ fontSize: 13, fontWeight: 600 }}>Brain</span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Brain</span>
           </button>
 
           <Notifications />
@@ -399,13 +399,28 @@ export default function Nav() {
       {/* Brain panel */}
       {brainOpen && <BrainPanel onClose={() => setBrainOpen(false)} />}
 
-      {/* Mobile bottom tab bar */}
+      {/* Mobile bottom tab bar — Brain is the prominent center action */}
       <nav className="mobile-tab-bar show-mobile" aria-label="Main navigation">
         <MobileTab href="/projects" icon={<IconProjects />} label="Projects" active={is('/projects') || pathname === '/'} />
-        <MobileTab href="/analytics" icon={<IconBarChart />} label="Analytics" active={is('/analytics')} />
         <MobileTab href="/tower" icon={<IconTower />} label="Tower" active={is('/tower')} />
-        <MobileTab href="/daily-brief" icon={<IconClipboard />} label="Brief" active={is('/daily-brief')} />
-        <MobileTab href="/integrations" icon={<IconPlug />} label="More" active={is('/integrations') || is('/orchestrate')} />
+
+        {/* Center Brain button — elevated */}
+        <button
+          onClick={() => setBrainOpen(v => !v)}
+          className={`mobile-tab-brain${brainOpen ? ' mobile-tab-brain-active' : ''}`}
+          aria-label="Open Brain"
+        >
+          <span className="mobile-tab-brain-orb">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+          </span>
+          <span className="mobile-tab-label">Brain</span>
+        </button>
+
+        <MobileTab href="/analytics" icon={<IconBarChart />} label="Analytics" active={is('/analytics')} />
+        <MobileTab href="/integrations" icon={<IconPlug />} label="More" active={is('/integrations') || is('/orchestrate') || is('/daily-brief')} />
       </nav>
     </>
   )

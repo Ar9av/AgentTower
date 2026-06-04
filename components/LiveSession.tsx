@@ -565,9 +565,6 @@ export default function LiveSession({
           }}
         />
 
-        {/* Model picker — always visible */}
-        <ModelPicker value={model} onChange={changeModel} />
-
         {/* Live dot */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span className={connected ? 'dot-live' : ''} style={!connected ? {
@@ -862,14 +859,14 @@ interface BarProps {
   onModelChange: (m: string) => void
 }
 
-function ModelPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function ModelPicker({ value, onChange, compact }: { value: string; onChange: (v: string) => void; compact?: boolean }) {
   const models = [
     { id: 'sonnet', label: 'Sonnet' },
     { id: 'opus',   label: 'Opus' },
     { id: 'haiku',  label: 'Haiku' },
   ]
   return (
-    <div className="model-picker">
+    <div className={`model-picker${compact ? ' model-picker-compact' : ''}`}>
       {models.map(m => (
         <button
           key={m.id}
@@ -963,7 +960,10 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
           </button>
         </div>
 
-        <p className="chat-hint">Enter to send · Shift+Enter for newline</p>
+        <div className="chat-pill-footer">
+          <ModelPicker value={model} onChange={onModelChange} compact />
+          <span className="chat-hint-inline">Enter to send · Shift+Enter for newline</span>
+        </div>
       </form>
     </div>
   )
@@ -991,7 +991,10 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
             {sending ? <SpinIcon /> : <SendIcon />}
           </button>
         </div>
-        <p className="chat-hint">Kills the paused session and starts fresh</p>
+        <div className="chat-pill-footer">
+          <ModelPicker value={model} onChange={onModelChange} compact />
+          <span className="chat-hint-inline">Kills the paused session and starts fresh</span>
+        </div>
       </form>
     </div>
   )

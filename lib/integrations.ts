@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { execSync } from 'child_process'
+import { execSync, spawnSync } from 'child_process'
 import { getClaudeDir } from './claude-fs'
 import type { AntigravityAgent } from './types'
 
@@ -22,14 +22,21 @@ export interface AntigravityConfig {
   apiBaseUrl?: string        // defaults to https://api.antigravity.dev
 }
 
+export interface GitHubConfig {
+  enabled: boolean
+  token?: string             // Personal Access Token with repo scope
+}
+
 export interface IntegrationsConfig {
   telegram: TelegramConfig
   antigravity: AntigravityConfig
+  github: GitHubConfig
 }
 
 const DEFAULT_CONFIG: IntegrationsConfig = {
   telegram: { enabled: false, allowedChatIds: [] },
   antigravity: { enabled: false },
+  github: { enabled: false },
 }
 
 export function loadIntegrations(): IntegrationsConfig {
@@ -39,6 +46,7 @@ export function loadIntegrations(): IntegrationsConfig {
     return {
       telegram: { ...DEFAULT_CONFIG.telegram, ...(parsed.telegram ?? {}) },
       antigravity: { ...DEFAULT_CONFIG.antigravity, ...(parsed.antigravity ?? {}) },
+      github: { ...DEFAULT_CONFIG.github, ...(parsed.github ?? {}) },
     }
   } catch {
     return DEFAULT_CONFIG
@@ -64,6 +72,30 @@ export function saveIntegrations(cfg: IntegrationsConfig): void {
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true })
   // Don't serialize secrets we didn't receive — merge with existing
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), { mode: 0o600 })
+}
+
+function getGhCliToken(): string {
+  try {
+    const result = spawnSync('gh', ['auth', 'token'], { encoding: 'utf8', timeout: 3000 })
+    if (result.status === 0) return result.stdout.trim()
+  } catch {}
+  return ''
+}
+
+export function getGitHubToken(): string {
+  return (
+    process.env.GITHUB_TOKEN ||
+    process.env.GH_TOKEN ||
+    loadIntegrations().github?.token ||
+    getGhCliToken()
+  )
+}
+
+export function getGitHubTokenSource(): 'env' | 'integrations' | 'gh-cli' | null {
+  if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) return 'env'
+  if (loadIntegrations().github?.token) return 'integrations'
+  if (getGhCliToken()) return 'gh-cli'
+  return null
 }
 
 export function getConfigPath(): string {
