@@ -5,7 +5,14 @@ import { getRecentSessions, getClaudeDir } from './claude-fs'
 import { scanClaudeSessions } from './process'
 import type { RecentSession } from './claude-fs'
 import type { ClaudeProcess } from './types'
-import type { RunRecord } from './orchestrator-types'
+// Minimal inline type — avoids importing the optional orchestrator module
+interface RunRecord {
+  status: string
+  issueNumber?: number
+  issueTitle?: string
+  attempt?: number
+  prUrl?: string
+}
 
 // Orchestrator is an optional module — gracefully skip if not deployed
 function safeLoadActiveRuns(): RunRecord[] {
