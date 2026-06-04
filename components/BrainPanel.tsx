@@ -1,6 +1,8 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Message {
   id: string
@@ -8,133 +10,212 @@ interface Message {
   content: string
   streaming?: boolean
   actions?: ParsedAction[]
+  ts: number
 }
 
 interface ParsedAction {
-  type: 'start_session' | 'open_session'
+  type: 'start_session' | 'open_session' | 'kill_session' | 'save_memory' | 'update_wiki' | 'search_wiki'
   label: string
-  project?: string
-  prompt?: string
-  model?: string
-  encodedFilepath?: string
+  payload: Record<string, unknown>
 }
 
-interface StatusSummary {
-  running: number
-  completedToday: number
-  currentActivities: string[]
+interface ContextMeta {
+  runningCount: number
+  completedTodayCount: number
+  hasWiki: boolean
+  hasMemory: boolean
+  hasOrchestrator: boolean
+}
+
+// ── Persistence ───────────────────────────────────────────────────────────────
+
+const HISTORY_KEY = 'brain-history-v2'
+
+function loadHistory(): Message[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY)
+    if (!raw) return []
+    const msgs = JSON.parse(raw) as Message[]
+    // Only keep messages from the last 7 days
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+    return msgs.filter(m => m.ts > cutoff).slice(-40)
+  } catch { return [] }
+}
+
+function saveHistory(msgs: Message[]) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(msgs.slice(-40)))
+  } catch { /* ignore */ }
+}
+
+// ── Action parsing ────────────────────────────────────────────────────────────
+
+const ACTION_LABELS: Record<string, string> = {
+  start_session: '▶ Start session',
+  open_session: '↗ Open session',
+  kill_session: '⏹ Kill agent',
+  save_memory: '🧠 Save to memory',
+  update_wiki: '📖 Update wiki',
+  search_wiki: '🔍 Search wiki',
 }
 
 function parseActions(text: string): ParsedAction[] {
   const actions: ParsedAction[] = []
-  const lines = text.split('\n')
-  for (const line of lines) {
-    const m = line.match(/^ACTION:(\w+):(.+)$/)
+  for (const line of text.split('\n')) {
+    const m = line.match(/^ACTION:(\w+):(\{.+\})$/)
     if (!m) continue
     try {
       const type = m[1] as ParsedAction['type']
       const payload = JSON.parse(m[2])
+      let label = ACTION_LABELS[type] ?? type
       if (type === 'start_session' && payload.project) {
-        actions.push({
-          type,
-          label: `Start: ${payload.prompt?.slice(0, 50) ?? 'new session'}`,
-          project: payload.project,
-          prompt: payload.prompt,
-          model: payload.model,
-        })
-      } else if (type === 'open_session' && payload.encodedFilepath) {
-        actions.push({
-          type,
-          label: payload.label ?? 'Open session',
-          encodedFilepath: payload.encodedFilepath,
-        })
+        const proj = String(payload.project).split('/').pop()
+        label = `▶ Start in ${proj}`
       }
+      if (type === 'open_session' && payload.label) label = `↗ ${payload.label}`
+      if (type === 'kill_session' && payload.label) label = `⏹ Kill ${payload.label}`
+      if (type === 'save_memory') label = '🧠 Save fact'
+      if (type === 'update_wiki' && payload.path) {
+        label = `📖 Write ${String(payload.path).split('/').pop()}`
+      }
+      if (type === 'search_wiki' && payload.query) label = `🔍 Search "${payload.query}"`
+      actions.push({ type, label, payload })
     } catch { /* skip malformed */ }
   }
   return actions
 }
 
 function stripActions(text: string): string {
-  return text
-    .split('\n')
-    .filter(l => !l.match(/^ACTION:\w+:/))
-    .join('\n')
-    .trim()
+  return text.split('\n').filter(l => !l.match(/^ACTION:\w+:\{/)).join('\n').trim()
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────
+// ── Action executor ───────────────────────────────────────────────────────────
 
-function ActionChip({ action, onDone }: { action: ParsedAction; onDone: () => void }) {
+function useActionExecutor(onResult: (msg: string) => void) {
   const router = useRouter()
-  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
 
-  async function execute() {
-    setState('loading')
+  return useCallback(async (action: ParsedAction): Promise<'done' | 'error'> => {
     try {
-      if (action.type === 'open_session' && action.encodedFilepath) {
-        router.push(`/session?f=${action.encodedFilepath}`)
-        onDone()
-        return
+      const p = action.payload
+
+      if (action.type === 'open_session' && p.encodedFilepath) {
+        router.push(`/session?f=${p.encodedFilepath}`)
+        return 'done'
       }
-      if (action.type === 'start_session' && action.project) {
+
+      if (action.type === 'start_session' && p.project) {
         const res = await fetch('/api/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_path: action.project,
-            prompt: action.prompt ?? 'hello',
-            model: action.model ?? 'sonnet',
-          }),
+          body: JSON.stringify({ project_path: p.project, prompt: p.prompt ?? 'hello', model: p.model ?? 'sonnet' }),
         })
-        if (res.ok) {
-          setState('done')
-          setTimeout(() => {
-            onDone()
-            router.push('/projects')
-          }, 800)
-          return
-        }
+        if (!res.ok) return 'error'
+        onResult(`Started session in ${String(p.project).split('/').pop()}`)
+        return 'done'
       }
-      setState('error')
-    } catch {
-      setState('error')
-    }
+
+      if (action.type === 'kill_session' && p.pid) {
+        const res = await fetch('/api/kill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pid: p.pid }),
+        })
+        return res.ok ? 'done' : 'error'
+      }
+
+      if (action.type === 'save_memory' && p.fact) {
+        const res = await fetch('/api/brain/memory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fact: p.fact }),
+        })
+        if (res.ok) onResult('Saved to memory')
+        return res.ok ? 'done' : 'error'
+      }
+
+      if (action.type === 'update_wiki' && p.path && p.content) {
+        const res = await fetch('/api/brain/wiki', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: p.path, title: p.title, content: p.content }),
+        })
+        if (res.ok) onResult(`Updated wiki: ${p.path}`)
+        return res.ok ? 'done' : 'error'
+      }
+
+      if (action.type === 'search_wiki' && p.query) {
+        const res = await fetch(`/api/brain/wiki?q=${encodeURIComponent(String(p.query))}`)
+        if (res.ok) {
+          const data = await res.json()
+          const preview = (data.results ?? []).slice(0, 3)
+            .map((r: { title: string; snippet: string }) => `**${r.title}**: ${r.snippet.slice(0, 120)}`)
+            .join('\n')
+          onResult(preview || 'No results found')
+        }
+        return res.ok ? 'done' : 'error'
+      }
+
+      return 'error'
+    } catch { return 'error' }
+  }, [router, onResult])
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function ContextBadge({ icon, label, active }: { icon: string; label: string; active: boolean }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600,
+      background: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--glass-bg)',
+      color: active ? 'var(--accent)' : 'var(--text3)',
+      border: `1px solid ${active ? 'color-mix(in srgb, var(--accent) 25%, transparent)' : 'var(--glass-border)'}`,
+    }}>
+      {icon} {label}
+    </span>
+  )
+}
+
+function ActionButton({ action, execute }: {
+  action: ParsedAction
+  execute: (a: ParsedAction) => Promise<'done' | 'error'>
+}) {
+  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+
+  async function run() {
+    if (state !== 'idle') return
+    setState('loading')
+    const result = await execute(action)
+    setState(result)
+    if (result === 'done') setTimeout(() => setState('idle'), 3000)
   }
 
-  const colors: Record<string, string> = {
-    idle:    'color-mix(in srgb, var(--accent) 14%, transparent)',
-    loading: 'color-mix(in srgb, var(--yellow) 14%, transparent)',
-    done:    'color-mix(in srgb, var(--green) 14%, transparent)',
-    error:   'color-mix(in srgb, var(--red) 14%, transparent)',
-  }
-  const textColors: Record<string, string> = {
-    idle: 'var(--accent)', loading: 'var(--yellow)', done: 'var(--green)', error: 'var(--red)',
+  const styles: Record<string, React.CSSProperties> = {
+    idle:    { background: 'var(--glass-bg)', color: 'var(--text2)', borderColor: 'var(--glass-border)', cursor: 'pointer' },
+    loading: { background: 'color-mix(in srgb, var(--yellow) 10%, transparent)', color: 'var(--yellow)', borderColor: 'color-mix(in srgb, var(--yellow) 25%, transparent)', cursor: 'default' },
+    done:    { background: 'color-mix(in srgb, var(--green) 12%, transparent)', color: 'var(--green)', borderColor: 'color-mix(in srgb, var(--green) 28%, transparent)', cursor: 'default' },
+    error:   { background: 'color-mix(in srgb, var(--red) 10%, transparent)', color: 'var(--red)', borderColor: 'color-mix(in srgb, var(--red) 25%, transparent)', cursor: 'pointer' },
   }
 
   return (
-    <button
-      onClick={execute}
-      disabled={state !== 'idle'}
-      style={{
-        padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: state === 'idle' ? 'pointer' : 'default',
-        background: colors[state],
-        border: `1px solid ${textColors[state].replace('var(--accent)', 'color-mix(in srgb, var(--accent) 30%, transparent)')}`,
-        color: textColors[state],
-        display: 'inline-flex', alignItems: 'center', gap: 5,
-        transition: 'all 0.15s',
-      }}
-    >
-      {state === 'idle'    && <span>⚡ {action.label}</span>}
-      {state === 'loading' && <span>⟳ Running…</span>}
-      {state === 'done'    && <span>✓ Done</span>}
-      {state === 'error'   && <span>✕ Failed</span>}
+    <button onClick={run} style={{
+      padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+      border: '1px solid', display: 'inline-flex', alignItems: 'center', gap: 5,
+      transition: 'all 0.12s', ...styles[state],
+    }}>
+      {state === 'loading' && <span style={{ animation: 'spin 0.8s linear infinite', display: 'inline-block' }}>⟳</span>}
+      {state === 'done'    && '✓ '}
+      {state === 'error'   && '✕ '}
+      {action.label}
     </button>
   )
 }
 
 function ThinkingDots() {
   return (
-    <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center', padding: '2px 0' }}>
+    <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}>
       {[0, 1, 2].map(i => (
         <span key={i} style={{
           width: 5, height: 5, borderRadius: '50%', background: 'var(--text3)',
@@ -146,81 +227,105 @@ function ThinkingDots() {
   )
 }
 
-function StatusBar({ status }: { status: StatusSummary | null }) {
-  if (!status) return null
+function MessageBubble({ msg, execute }: {
+  msg: Message
+  execute: (a: ParsedAction) => Promise<'done' | 'error'>
+}) {
+  const isUser = msg.role === 'user'
   return (
     <div style={{
-      padding: '8px 16px', borderBottom: '1px solid var(--glass-border)',
-      display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center',
-      background: 'var(--bg3)', flexShrink: 0,
+      display: 'flex', flexDirection: isUser ? 'row-reverse' : 'row',
+      gap: 8, alignItems: 'flex-start', marginBottom: 14,
     }}>
-      {status.running > 0 ? (
-        <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span className="dot-active" style={{ width: 6, height: 6 }} />
-          {status.running} running
-        </span>
-      ) : (
-        <span style={{ fontSize: 12, color: 'var(--text3)' }}>No agents running</span>
+      {!isUser && (
+        <div style={{
+          width: 26, height: 26, borderRadius: 7, flexShrink: 0,
+          background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1,
+        }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+        </div>
       )}
-      {status.completedToday > 0 && (
-        <span style={{ fontSize: 12, color: 'var(--text3)' }}>· {status.completedToday} completed today</span>
-      )}
-      {status.currentActivities.slice(0, 2).map((a, i) => (
-        <span key={i} style={{
-          fontSize: 11, padding: '2px 8px', borderRadius: 99,
-          background: 'var(--glass-bg)', color: 'var(--text3)',
+      <div style={{ maxWidth: '84%' }}>
+        <div style={{
+          padding: '9px 13px',
+          borderRadius: isUser ? '13px 13px 3px 13px' : '13px 13px 13px 3px',
+          background: isUser
+            ? 'color-mix(in srgb, var(--accent) 13%, var(--bg3))'
+            : 'var(--bg3)',
           border: '1px solid var(--glass-border)',
-        }}>{a}</span>
-      ))}
+          fontSize: 13, lineHeight: 1.6, color: 'var(--text)',
+          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+        }}>
+          {msg.streaming && !msg.content ? <ThinkingDots /> : (msg.content || <ThinkingDots />)}
+        </div>
+        {msg.actions && msg.actions.length > 0 && (
+          <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {msg.actions.map((a, i) => <ActionButton key={i} action={a} execute={execute} />)}
+          </div>
+        )}
+        <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 3, textAlign: isUser ? 'right' : 'left' }}>
+          {new Date(msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </div>
+      </div>
     </div>
   )
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+const QUICK_PROMPTS = [
+  'What are my agents working on right now?',
+  'Any agents stuck or stalled?',
+  'What should I focus on next?',
+  'Summarise today\'s agent activity',
+  'Check the wiki for this project\'s status',
+]
+
 interface Props { onClose: () => void }
 
 export default function BrainPanel({ onClose }: Props) {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<Message[]>(() => loadHistory())
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [status, setStatus] = useState<StatusSummary | null>(null)
+  const [contextMeta, setContextMeta] = useState<ContextMeta | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  // Load live status summary
-  useEffect(() => {
-    fetch('/api/recent-sessions?limit=30')
-      .then(r => r.ok ? r.json() : [])
-      .then((sessions: Array<{ isActive: boolean; mtime: number; currentActivity: string | null }>) => {
-        const now = Date.now()
-        const running = sessions.filter(s => s.isActive)
-        const completedToday = sessions.filter(s => !s.isActive && now - s.mtime < 24 * 60 * 60 * 1000).length
-        const activities = running
-          .map(s => s.currentActivity)
-          .filter(Boolean)
-          .slice(0, 3) as string[]
-        setStatus({ running: running.length, completedToday, currentActivities: activities })
-      })
-      .catch(() => {})
-  }, [])
+  const execute = useActionExecutor((msg) => {
+    const note: Message = {
+      id: `sys-${Date.now()}`,
+      role: 'brain',
+      content: `✓ ${msg}`,
+      ts: Date.now(),
+    }
+    setMessages(prev => { const next = [...prev, note]; saveHistory(next); return next })
+  })
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
   useEffect(() => {
-    inputRef.current?.focus()
+    setTimeout(() => inputRef.current?.focus(), 80)
   }, [])
+
+  // Persist history on change
+  useEffect(() => {
+    if (messages.length > 0) saveHistory(messages)
+  }, [messages])
 
   async function send(text?: string) {
     const content = (text ?? input).trim()
     if (!content || loading) return
 
-    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content }
+    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content, ts: Date.now() }
     const brainId = `b-${Date.now()}`
-    const brainMsg: Message = { id: brainId, role: 'brain', content: '', streaming: true }
+    const brainMsg: Message = { id: brainId, role: 'brain', content: '', streaming: true, ts: Date.now() }
 
     setMessages(prev => [...prev, userMsg, brainMsg])
     setInput('')
@@ -241,37 +346,50 @@ export default function BrainPanel({ onClose }: Props) {
       })
 
       if (!res.ok || !res.body) {
-        setMessages(prev => prev.map(m =>
-          m.id === brainId ? { ...m, content: 'Failed to get response.', streaming: false } : m
-        ))
+        setMessages(prev => prev.map(m => m.id === brainId
+          ? { ...m, content: 'Failed to get response.', streaming: false } : m))
         return
       }
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let full = ''
+      let metaParsed = false
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        const chunk = decoder.decode(value, { stream: true })
+        let chunk = decoder.decode(value, { stream: true })
+
+        // Parse leading metadata block \x00{...}\x00
+        if (!metaParsed && chunk.startsWith('\x00')) {
+          const end = chunk.indexOf('\x00', 1)
+          if (end > 0) {
+            try {
+              const meta = JSON.parse(chunk.slice(1, end)) as ContextMeta & { _meta?: boolean }
+              if (meta._meta) { setContextMeta(meta); metaParsed = true }
+            } catch { /* ignore */ }
+            chunk = chunk.slice(end + 1)
+          }
+        }
+
         full += chunk
-        setMessages(prev => prev.map(m =>
-          m.id === brainId ? { ...m, content: full } : m
-        ))
+        setMessages(prev => prev.map(m => m.id === brainId ? { ...m, content: full } : m))
       }
 
-      // Finalize — parse actions, strip from text
       const actions = parseActions(full)
       const clean = stripActions(full)
-      setMessages(prev => prev.map(m =>
-        m.id === brainId ? { ...m, content: clean, streaming: false, actions } : m
-      ))
+      setMessages(prev => {
+        const next = prev.map(m => m.id === brainId
+          ? { ...m, content: clean, streaming: false, actions }
+          : m)
+        saveHistory(next)
+        return next
+      })
     } catch (err: unknown) {
       if (err instanceof Error && err.name !== 'AbortError') {
-        setMessages(prev => prev.map(m =>
-          m.id === brainId ? { ...m, content: 'Connection error.', streaming: false } : m
-        ))
+        setMessages(prev => prev.map(m => m.id === brainId
+          ? { ...m, content: 'Connection error. Is Claude installed?', streaming: false } : m))
       }
     } finally {
       setLoading(false)
@@ -279,45 +397,41 @@ export default function BrainPanel({ onClose }: Props) {
     }
   }
 
-  const QUICK_PROMPTS = [
-    'What are my agents working on?',
-    'Any agents stuck or stalled?',
-    'What should I work on next?',
-    'Summarize today\'s activity',
-  ]
+  function clearHistory() {
+    if (!confirm('Clear all brain history?')) return
+    setMessages([])
+    localStorage.removeItem(HISTORY_KEY)
+  }
 
   return (
     <>
       {/* Backdrop */}
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(6px)', zIndex: 450,
-        }}
-      />
+      <div onClick={onClose} style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+        backdropFilter: 'blur(6px)', zIndex: 450,
+      }} />
 
       {/* Panel */}
       <aside style={{
         position: 'fixed', top: 0, right: 0, bottom: 0,
-        width: 'min(520px, 96vw)', zIndex: 451,
+        width: 'min(540px, 97vw)', zIndex: 451,
         display: 'flex', flexDirection: 'column',
-        background: 'var(--bg2)',
+        background: 'var(--bg)',
         borderLeft: '1px solid var(--glass-border)',
-        boxShadow: '-8px 0 60px rgba(0,0,0,0.6)',
+        boxShadow: '-10px 0 60px rgba(0,0,0,0.65)',
         animation: 'slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)',
       }}>
 
         {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10,
-          padding: '14px 16px', borderBottom: '1px solid var(--glass-border)',
-          flexShrink: 0, background: 'var(--bg3)',
+          padding: '12px 16px', borderBottom: '1px solid var(--glass-border)',
+          flexShrink: 0, background: 'var(--bg2)',
         }}>
           <div style={{
             width: 32, height: 32, borderRadius: 10, flexShrink: 0,
-            background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
-            border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+            background: 'color-mix(in srgb, var(--accent) 15%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--accent) 32%, transparent)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)"
@@ -325,55 +439,62 @@ export default function BrainPanel({ onClose }: Props) {
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
             </svg>
           </div>
-
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>AgentTower Brain</div>
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>AI coordination assistant</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+              AgentTower Brain
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Unified orchestrator · always-on memory</div>
           </div>
-
-          <button
-            onClick={onClose}
-            style={{
+          <div style={{ display: 'flex', gap: 6 }}>
+            {messages.length > 0 && (
+              <button onClick={clearHistory} title="Clear history" style={{
+                background: 'none', border: 'none', color: 'var(--text3)', fontSize: 12,
+                cursor: 'pointer', padding: '4px 8px', borderRadius: 6,
+              }}>Clear</button>
+            )}
+            <button onClick={onClose} style={{
               background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
               color: 'var(--text2)', fontSize: 14, cursor: 'pointer',
               padding: '5px 9px', borderRadius: 8, lineHeight: 1,
               display: 'flex', alignItems: 'center',
-            }}
-          >✕</button>
+            }}>✕</button>
+          </div>
         </div>
 
-        {/* Status bar */}
-        <StatusBar status={status} />
+        {/* Context badges */}
+        {contextMeta && (
+          <div style={{
+            padding: '7px 14px', borderBottom: '1px solid var(--glass-border)',
+            display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0,
+            background: 'var(--bg2)',
+          }}>
+            <ContextBadge icon="🟢" label={`${contextMeta.runningCount} running`} active={contextMeta.runningCount > 0} />
+            <ContextBadge icon="✅" label={`${contextMeta.completedTodayCount} today`} active={contextMeta.completedTodayCount > 0} />
+            <ContextBadge icon="📖" label="Wiki" active={contextMeta.hasWiki} />
+            <ContextBadge icon="🧠" label="Memory" active={contextMeta.hasMemory} />
+            <ContextBadge icon="🤖" label="Orchestrator" active={contextMeta.hasOrchestrator} />
+          </div>
+        )}
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
-
-          {/* Empty state — quick prompts */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
           {messages.length === 0 && (
-            <div style={{ paddingTop: 12 }}>
-              <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16 }}>
-                Ask me anything about your agents. I have full visibility into all running and recent sessions.
+            <div>
+              <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 14, lineHeight: 1.6 }}>
+                Your unified intelligence layer. I have access to all running sessions,
+                your Obsidian wiki, project memory, and the orchestrator. Ask me anything
+                or give me a command.
               </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                 {QUICK_PROMPTS.map(q => (
-                  <button
-                    key={q}
-                    onClick={() => send(q)}
-                    style={{
-                      textAlign: 'left', padding: '9px 14px', borderRadius: 10,
-                      background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
-                      color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
-                      transition: 'all 0.12s', lineHeight: 1.4,
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.background = 'var(--glass-bg-hover)'
-                      e.currentTarget.style.color = 'var(--text)'
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.background = 'var(--glass-bg)'
-                      e.currentTarget.style.color = 'var(--text2)'
-                    }}
-                  >
+                  <button key={q} onClick={() => send(q)} style={{
+                    textAlign: 'left', padding: '8px 13px', borderRadius: 9,
+                    background: 'var(--bg2)', border: '1px solid var(--glass-border)',
+                    color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
+                    transition: 'all 0.12s', lineHeight: 1.4,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg3)'; e.currentTarget.style.color = 'var(--text)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg2)'; e.currentTarget.style.color = 'var(--text2)' }}>
                     {q}
                   </button>
                 ))}
@@ -381,66 +502,21 @@ export default function BrainPanel({ onClose }: Props) {
             </div>
           )}
 
-          {/* Chat messages */}
           {messages.map(msg => (
-            <div key={msg.id} style={{
-              marginBottom: 16,
-              display: 'flex',
-              flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
-              gap: 8, alignItems: 'flex-start',
-            }}>
-              {/* Avatar */}
-              {msg.role === 'brain' && (
-                <div style={{
-                  width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                  background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-                  border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2,
-                }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                  </svg>
-                </div>
-              )}
-
-              <div style={{ maxWidth: '85%' }}>
-                {/* Bubble */}
-                <div style={{
-                  padding: '10px 14px', borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                  background: msg.role === 'user'
-                    ? 'color-mix(in srgb, var(--accent) 14%, var(--bg3))'
-                    : 'var(--bg3)',
-                  border: '1px solid var(--glass-border)',
-                  fontSize: 13, lineHeight: 1.6, color: 'var(--text)',
-                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }}>
-                  {msg.streaming && !msg.content ? <ThinkingDots /> : (msg.content || <ThinkingDots />)}
-                </div>
-
-                {/* Action chips */}
-                {msg.actions && msg.actions.length > 0 && (
-                  <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {msg.actions.map((action, i) => (
-                      <ActionChip key={i} action={action} onDone={() => {}} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <MessageBubble key={msg.id} msg={msg} execute={execute} />
           ))}
-
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
+        {/* Input area */}
         <div style={{
-          padding: '10px 14px',
-          borderTop: '1px solid var(--glass-border)',
-          flexShrink: 0, background: 'var(--bg3)',
+          padding: '10px 14px 14px', borderTop: '1px solid var(--glass-border)',
+          flexShrink: 0, background: 'var(--bg2)',
         }}>
           <div style={{
             display: 'flex', gap: 8, alignItems: 'flex-end',
-            background: 'var(--bg2)', border: `1.5px solid ${loading ? 'var(--accent)' : 'var(--glass-border-hi)'}`,
+            background: 'var(--bg3)',
+            border: `1.5px solid ${loading ? 'color-mix(in srgb, var(--accent) 50%, var(--glass-border))' : 'var(--glass-border-hi)'}`,
             borderRadius: 14, padding: '6px 6px 6px 14px',
             transition: 'border-color 0.15s',
           }}>
@@ -452,31 +528,26 @@ export default function BrainPanel({ onClose }: Props) {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
                 if (e.key === 'Escape') onClose()
               }}
-              placeholder="Ask about your agents…"
+              placeholder="Ask, command, or describe what you need…"
               rows={1}
               disabled={loading}
               style={{
                 flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                resize: 'none', color: 'var(--text)', fontSize: 14, lineHeight: 1.5,
-                padding: '5px 0', maxHeight: 120, overflowY: 'auto', fontFamily: 'inherit',
+                resize: 'none', color: 'var(--text)', fontSize: 'max(14px, 16px)', lineHeight: 1.55,
+                padding: '5px 0', maxHeight: 140, overflowY: 'auto', fontFamily: 'inherit',
               }}
             />
             {loading ? (
-              <button
-                onClick={() => { abortRef.current?.abort(); setLoading(false) }}
-                style={{
+              <button onClick={() => { abortRef.current?.abort(); setLoading(false) }}
+                title="Stop" style={{
                   width: 34, height: 34, borderRadius: '50%', border: 'none', cursor: 'pointer',
-                  background: 'color-mix(in srgb, var(--red) 20%, transparent)',
+                  background: 'color-mix(in srgb, var(--red) 18%, transparent)',
                   color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0, alignSelf: 'flex-end', marginBottom: 1, fontSize: 14,
-                }}
-                title="Stop"
-              >■</button>
+                  flexShrink: 0, alignSelf: 'flex-end', marginBottom: 1,
+                }}>■</button>
             ) : (
-              <button
-                onClick={() => send()}
-                disabled={!input.trim()}
-                style={{
+              <button onClick={() => send()} disabled={!input.trim()}
+                title="Send (Enter)" style={{
                   width: 34, height: 34, borderRadius: '50%', border: 'none',
                   cursor: input.trim() ? 'pointer' : 'default', flexShrink: 0,
                   alignSelf: 'flex-end', marginBottom: 1,
@@ -484,9 +555,7 @@ export default function BrainPanel({ onClose }: Props) {
                   color: input.trim() ? '#000' : 'var(--text3)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transition: 'background 0.12s',
-                }}
-                title="Send (Enter)"
-              >
+                }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                   strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="19" x2="12" y2="5"/>
@@ -496,7 +565,7 @@ export default function BrainPanel({ onClose }: Props) {
             )}
           </div>
           <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5, textAlign: 'center' }}>
-            Enter to send · Shift+Enter for newline · Esc to close
+            Enter · Shift+Enter for newline · Esc to close
           </p>
         </div>
       </aside>
@@ -507,9 +576,10 @@ export default function BrainPanel({ onClose }: Props) {
           to   { transform: translateX(0);   opacity: 1; }
         }
         @keyframes dot-bounce {
-          0%, 80%, 100% { transform: translateY(0); opacity: .4; }
-          40% { transform: translateY(-4px); opacity: 1; }
+          0%,80%,100% { transform: translateY(0); opacity:.4; }
+          40% { transform: translateY(-4px); opacity:1; }
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
     </>
   )
