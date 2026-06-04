@@ -2,6 +2,138 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 
+// ── Markdown renderer ─────────────────────────────────────────────────────────
+
+function renderMarkdown(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = []
+  const lines = text.split('\n')
+  let i = 0
+
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // Fenced code block
+    if (line.startsWith('```')) {
+      const lang = line.slice(3).trim()
+      const codeLines: string[] = []
+      i++
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        codeLines.push(lines[i]); i++
+      }
+      nodes.push(
+        <pre key={i} style={{ background: 'var(--bg)', border: '1px solid var(--glass-border)', borderRadius: 8, padding: '10px 14px', overflowX: 'auto', fontSize: 12, margin: '8px 0', fontFamily: 'ui-monospace, monospace' }}>
+          {lang && <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>{lang}</div>}
+          <code>{codeLines.join('\n')}</code>
+        </pre>
+      )
+      i++; continue
+    }
+
+    // Heading
+    const hm = line.match(/^(#{1,3})\s+(.+)/)
+    if (hm) {
+      const level = hm[1].length
+      const size = level === 1 ? 17 : level === 2 ? 15 : 13
+      nodes.push(
+        <div key={i} style={{ fontSize: size, fontWeight: 700, color: 'var(--text)', margin: `${level === 1 ? 14 : 10}px 0 4px`, letterSpacing: '-0.01em' }}>
+          {renderInline(hm[2])}
+        </div>
+      )
+      i++; continue
+    }
+
+    // Table
+    if (line.includes('|') && i + 1 < lines.length && lines[i + 1].match(/^\|?[\s\-|:]+\|?$/)) {
+      const tableLines: string[] = [line]
+      i++
+      while (i < lines.length && lines[i].includes('|')) { tableLines.push(lines[i]); i++ }
+
+      const parseRow = (r: string) => r.split('|').map(cell => cell.trim()).filter(cell => cell !== '')
+      const rows = tableLines.filter(r => !r.match(/^\|?[\s\-|:]+\|?$/))
+      const header = parseRow(rows[0] ?? '')
+      const body = rows.slice(1).map(parseRow)
+
+      nodes.push(
+        <div key={i} style={{ overflowX: 'auto', margin: '8px 0' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
+            <thead>
+              <tr>{header.map((h, j) => (
+                <th key={j} style={{ padding: '5px 10px', textAlign: 'left', borderBottom: '1px solid var(--glass-border)', color: 'var(--text2)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {renderInline(h)}
+                </th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {body.map((row, ri) => (
+                <tr key={ri} style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} style={{ padding: '5px 10px', color: 'var(--text)', verticalAlign: 'top' }}>
+                      {renderInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+      continue
+    }
+
+    // Unordered list
+    if (line.match(/^[-*]\s/)) {
+      const items: string[] = []
+      while (i < lines.length && lines[i].match(/^[-*]\s/)) {
+        items.push(lines[i].replace(/^[-*]\s/, '')); i++
+      }
+      nodes.push(
+        <ul key={i} style={{ margin: '4px 0', paddingLeft: 18, listStyle: 'disc' }}>
+          {items.map((it, j) => <li key={j} style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>{renderInline(it)}</li>)}
+        </ul>
+      )
+      continue
+    }
+
+    // Horizontal rule
+    if (line.match(/^[-*_]{3,}$/)) {
+      nodes.push(<hr key={i} style={{ border: 'none', borderTop: '1px solid var(--glass-border)', margin: '10px 0' }} />)
+      i++; continue
+    }
+
+    // Empty line → spacing
+    if (!line.trim()) {
+      nodes.push(<div key={i} style={{ height: 6 }} />)
+      i++; continue
+    }
+
+    // Normal paragraph
+    nodes.push(
+      <p key={i} style={{ margin: '3px 0', fontSize: 13, lineHeight: 1.65, color: 'var(--text)' }}>
+        {renderInline(line)}
+      </p>
+    )
+    i++
+  }
+
+  return nodes
+}
+
+function renderInline(text: string): React.ReactNode {
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[([^\]]+)\]\(([^)]+)\))/)
+  return parts.map((part, i) => {
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2)
+      return <code key={i} style={{ background: 'var(--bg)', padding: '1px 5px', borderRadius: 4, fontSize: 12, fontFamily: 'ui-monospace, monospace', color: 'var(--accent)' }}>{part.slice(1, -1)}</code>
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4)
+      return <strong key={i} style={{ fontWeight: 700, color: 'var(--text)' }}>{part.slice(2, -2)}</strong>
+    if (part.startsWith('*') && part.endsWith('*') && part.length > 2)
+      return <em key={i}>{part.slice(1, -1)}</em>
+    const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+    if (linkMatch)
+      return <a key={i} href={linkMatch[2]} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>{linkMatch[1]}</a>
+    return part
+  })
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Message {
@@ -232,38 +364,44 @@ function MessageBubble({ msg, execute }: {
   execute: (a: ParsedAction) => Promise<'done' | 'error'>
 }) {
   const isUser = msg.role === 'user'
+  const showThinking = msg.streaming && !msg.content
+
   return (
     <div style={{
       display: 'flex', flexDirection: isUser ? 'row-reverse' : 'row',
-      gap: 8, alignItems: 'flex-start', marginBottom: 14,
+      gap: 8, alignItems: 'flex-start', marginBottom: 16,
     }}>
       {!isUser && (
         <div style={{
-          width: 26, height: 26, borderRadius: 7, flexShrink: 0,
+          width: 28, height: 28, borderRadius: 8, flexShrink: 0,
           background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
           border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2,
         }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
           </svg>
         </div>
       )}
-      <div style={{ maxWidth: '84%' }}>
+      <div style={{ maxWidth: isUser ? '75%' : '92%', minWidth: 0 }}>
         <div style={{
-          padding: '9px 13px',
-          borderRadius: isUser ? '13px 13px 3px 13px' : '13px 13px 13px 3px',
+          padding: isUser ? '9px 14px' : '10px 16px',
+          borderRadius: isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
           background: isUser
-            ? 'color-mix(in srgb, var(--accent) 13%, var(--bg3))'
+            ? 'color-mix(in srgb, var(--accent) 14%, var(--bg3))'
             : 'var(--bg3)',
           border: '1px solid var(--glass-border)',
-          fontSize: 13, lineHeight: 1.6, color: 'var(--text)',
-          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          wordBreak: 'break-word',
         }}>
-          {msg.streaming && !msg.content ? <ThinkingDots /> : (msg.content || <ThinkingDots />)}
+          {showThinking
+            ? <ThinkingDots />
+            : isUser
+              ? <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65, color: 'var(--text)' }}>{msg.content}</p>
+              : <>{renderMarkdown(msg.content || '')}</>
+          }
         </div>
         {msg.actions && msg.actions.length > 0 && (
-          <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+          <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
             {msg.actions.map((a, i) => <ActionButton key={i} action={a} execute={execute} />)}
           </div>
         )}
@@ -292,6 +430,7 @@ export default function BrainPanel({ onClose }: Props) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [contextMeta, setContextMeta] = useState<ContextMeta | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -413,13 +552,19 @@ export default function BrainPanel({ onClose }: Props) {
 
       {/* Panel */}
       <aside style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0,
-        width: 'min(540px, 97vw)', zIndex: 451,
+        position: 'fixed',
+        top: fullscreen ? 0 : 0,
+        right: 0,
+        bottom: 0,
+        left: fullscreen ? 0 : 'auto',
+        width: fullscreen ? '100%' : 'min(580px, 97vw)',
+        zIndex: 451,
         display: 'flex', flexDirection: 'column',
         background: 'var(--bg)',
-        borderLeft: '1px solid var(--glass-border)',
-        boxShadow: '-10px 0 60px rgba(0,0,0,0.65)',
+        borderLeft: fullscreen ? 'none' : '1px solid var(--glass-border)',
+        boxShadow: fullscreen ? 'none' : '-10px 0 60px rgba(0,0,0,0.65)',
         animation: 'slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)',
+        transition: 'left 0.2s ease, width 0.2s ease',
       }}>
 
         {/* Header */}
@@ -445,13 +590,36 @@ export default function BrainPanel({ onClose }: Props) {
             </div>
             <div style={{ fontSize: 11, color: 'var(--text3)' }}>Unified orchestrator · always-on memory</div>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
             {messages.length > 0 && (
               <button onClick={clearHistory} title="Clear history" style={{
                 background: 'none', border: 'none', color: 'var(--text3)', fontSize: 12,
                 cursor: 'pointer', padding: '4px 8px', borderRadius: 6,
               }}>Clear</button>
             )}
+            {/* Fullscreen toggle */}
+            <button
+              onClick={() => setFullscreen(v => !v)}
+              title={fullscreen ? 'Exit fullscreen' : 'Expand to fullscreen'}
+              style={{
+                background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
+                color: 'var(--text2)', cursor: 'pointer',
+                padding: '5px 8px', borderRadius: 8, lineHeight: 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              {fullscreen ? (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+                  <line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>
+                </svg>
+              ) : (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+                  <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                </svg>
+              )}
+            </button>
             <button onClick={onClose} style={{
               background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
               color: 'var(--text2)', fontSize: 14, cursor: 'pointer',
@@ -477,7 +645,7 @@ export default function BrainPanel({ onClose }: Props) {
         )}
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: fullscreen ? '20px max(16px, calc(50% - 380px))' : '14px 16px' }}>
           {messages.length === 0 && (
             <div>
               <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 14, lineHeight: 1.6 }}>
@@ -510,7 +678,8 @@ export default function BrainPanel({ onClose }: Props) {
 
         {/* Input area */}
         <div style={{
-          padding: '10px 14px 14px', borderTop: '1px solid var(--glass-border)',
+          padding: fullscreen ? '12px max(14px, calc(50% - 380px)) 16px' : '10px 14px 14px',
+          borderTop: '1px solid var(--glass-border)',
           flexShrink: 0, background: 'var(--bg2)',
         }}>
           <div style={{

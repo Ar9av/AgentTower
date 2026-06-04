@@ -6,18 +6,34 @@ import { scanClaudeSessions } from './process'
 import type { RecentSession } from './claude-fs'
 import type { ClaudeProcess } from './types'
 
-// ── Session brief: read JSONL directly for real task content ──────────────────
+// ── Session brief: read JSONL for ai-title, away_summary (recap), tools ──────
 
 interface RawBlock { type: string; text?: string; name?: string }
-interface RawLine { type: string; message?: { content?: RawBlock[] }; isMeta?: boolean }
+interface RawLine {
+  type: string
+  subtype?: string
+  content?: string
+  aiTitle?: string
+  lastPrompt?: string
+  message?: { content?: RawBlock[] }
+  isMeta?: boolean
+}
 
-function getSessionBrief(filepath: string): { task: string; recentTools: string[] } {
-  const result = { task: '(no prompt)', recentTools: [] as string[] }
+interface SessionBrief {
+  title: string       // ai-title (Claude's own concise title)
+  task: string        // first user message
+  summary: string     // most recent away_summary (the recap!)
+  lastPrompt: string  // last user instruction
+  recentTools: string[]
+}
+
+function getSessionBrief(filepath: string): SessionBrief {
+  const result: SessionBrief = { title: '', task: '', summary: '', lastPrompt: '', recentTools: [] }
   try {
     const stat = fs.statSync(filepath)
     if (stat.size === 0) return result
 
-    // Read first 12KB for the initial prompt
+    // ── Head (first 12KB): first user message ────────────────────────────────
     const headSize = Math.min(12288, stat.size)
     const headBuf = Buffer.alloc(headSize)
     const fd1 = fs.openSync(filepath, 'r')
@@ -27,41 +43,58 @@ function getSessionBrief(filepath: string): { task: string; recentTools: string[
     for (const line of headBuf.toString('utf-8').split('\n')) {
       try {
         const obj = JSON.parse(line.trim()) as RawLine
-        if (obj?.isMeta || obj?.type !== 'user') continue
-        for (const block of (obj.message?.content ?? [])) {
-          if (block.type === 'text' && block.text) {
-            const cleaned = block.text.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').trim()
-            if (cleaned && cleaned.length > 2) {
-              result.task = truncate(cleaned, 160)
-              break
+        if (obj?.type === 'user' && !obj.isMeta) {
+          for (const block of (obj.message?.content ?? [])) {
+            if (block.type === 'text' && block.text) {
+              const cleaned = block.text.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').trim()
+              if (cleaned.length > 2) { result.task = truncate(cleaned, 180); break }
             }
           }
         }
-        if (result.task !== '(no prompt)') break
+        if (result.task) break
       } catch { /* skip */ }
     }
 
-    // Read last 20KB for recent tool activity
-    const tailSize = Math.min(20480, stat.size)
+    // ── Tail (last 40KB): ai-title, away_summary, last-prompt, tools ─────────
+    const tailSize = Math.min(40960, stat.size)
     const tailBuf = Buffer.alloc(tailSize)
     const fd2 = fs.openSync(filepath, 'r')
     fs.readSync(fd2, tailBuf, 0, tailSize, stat.size - tailSize)
     fs.closeSync(fd2)
 
+    const tailLines = tailBuf.toString('utf-8').split('\n').filter(Boolean)
     const toolsSeen: string[] = []
-    for (const line of tailBuf.toString('utf-8').split('\n').reverse()) {
+
+    for (let i = tailLines.length - 1; i >= 0; i--) {
       try {
-        const obj = JSON.parse(line.trim()) as RawLine
-        if (obj?.type !== 'assistant') continue
-        for (const block of (obj.message?.content ?? [])) {
-          if (block.type === 'tool_use' && block.name && !toolsSeen.includes(block.name)) {
-            toolsSeen.push(block.name)
-            if (toolsSeen.length >= 4) break
+        const obj = JSON.parse(tailLines[i]) as RawLine
+
+        // ai-title: Claude's own session title
+        if (obj.type === 'ai-title' && obj.aiTitle && !result.title) {
+          result.title = obj.aiTitle
+        }
+
+        // away_summary: the recap text (most recent wins — scanning in reverse)
+        if (obj.type === 'system' && obj.subtype === 'away_summary' && obj.content && !result.summary) {
+          result.summary = truncate(String(obj.content), 300)
+        }
+
+        // last-prompt: last user instruction
+        if (obj.type === 'last-prompt' && obj.lastPrompt && !result.lastPrompt) {
+          result.lastPrompt = truncate(String(obj.lastPrompt), 180)
+        }
+
+        // tool calls from assistant messages
+        if (obj.type === 'assistant' && toolsSeen.length < 5) {
+          for (const block of (obj.message?.content ?? [])) {
+            if (block.type === 'tool_use' && block.name && !toolsSeen.includes(block.name)) {
+              toolsSeen.push(block.name)
+            }
           }
         }
-        if (toolsSeen.length >= 4) break
       } catch { /* skip */ }
     }
+
     result.recentTools = toolsSeen.reverse()
   } catch { /* ignore */ }
   return result
@@ -142,13 +175,13 @@ function buildSessionContext(
       const proc = processes[s.sessionId]
       const dur = proc ? Math.floor((now - (proc.startedAt ?? now)) / 60_000) : 0
       const brief = getSessionBrief(s.filepath)
-      // Prefer cached firstPrompt, fall back to deep read
-      const task = (s.firstPrompt && s.firstPrompt !== '(no prompt)')
-        ? s.firstPrompt : brief.task
-      const act = s.currentActivity ? ` · **${s.currentActivity}**` : ''
+      const title = brief.title || (s.firstPrompt !== '(no prompt)' ? s.firstPrompt : brief.task) || s.projectDisplayName
+      const act = s.currentActivity ? ` · *${s.currentActivity}*` : ''
       lines.push(`- **${s.projectDisplayName}** — ${dur}m${act} — pid:${proc?.pid ?? '?'}`)
-      lines.push(`  Task: "${truncate(task, 160)}"`)
-      if (brief.recentTools.length > 0) lines.push(`  Recent tools: ${brief.recentTools.join(', ')}`)
+      lines.push(`  Title: "${truncate(title, 160)}"`)
+      if (brief.summary) lines.push(`  Recap: "${truncate(brief.summary, 250)}"`)
+      else if (brief.lastPrompt) lines.push(`  Last instruction: "${brief.lastPrompt}"`)
+      if (brief.recentTools.length > 0) lines.push(`  Tools: ${brief.recentTools.join(', ')}`)
       if (proc?.cwd) lines.push(`  Path: \`${proc.cwd}\``)
     }
   } else {
@@ -159,10 +192,11 @@ function buildSessionContext(
     lines.push(`\n### ✅ Completed Today (${recent.length})`)
     for (const s of recent) {
       const brief = getSessionBrief(s.filepath)
-      const task = (s.firstPrompt && s.firstPrompt !== '(no prompt)')
-        ? s.firstPrompt : brief.task
+      const title = brief.title || (s.firstPrompt !== '(no prompt)' ? s.firstPrompt : brief.task) || s.projectDisplayName
+      const summary = brief.summary || (brief.lastPrompt ? `Last: ${brief.lastPrompt}` : '')
       const tools = brief.recentTools.length > 0 ? ` [${brief.recentTools.slice(0, 3).join(', ')}]` : ''
-      lines.push(`- **${s.projectDisplayName}** — "${truncate(task, 120)}"${tools} — ${relTime(s.mtime)}`)
+      lines.push(`- **${s.projectDisplayName}** — "${truncate(title, 100)}"${tools} — ${relTime(s.mtime)}`)
+      if (summary) lines.push(`  ${truncate(summary, 200)}`)
     }
   }
 
