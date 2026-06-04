@@ -5,6 +5,67 @@ import { getRecentSessions, getClaudeDir } from './claude-fs'
 import { scanClaudeSessions } from './process'
 import type { RecentSession } from './claude-fs'
 import type { ClaudeProcess } from './types'
+
+// ── Session brief: read JSONL directly for real task content ──────────────────
+
+interface RawBlock { type: string; text?: string; name?: string }
+interface RawLine { type: string; message?: { content?: RawBlock[] }; isMeta?: boolean }
+
+function getSessionBrief(filepath: string): { task: string; recentTools: string[] } {
+  const result = { task: '(no prompt)', recentTools: [] as string[] }
+  try {
+    const stat = fs.statSync(filepath)
+    if (stat.size === 0) return result
+
+    // Read first 12KB for the initial prompt
+    const headSize = Math.min(12288, stat.size)
+    const headBuf = Buffer.alloc(headSize)
+    const fd1 = fs.openSync(filepath, 'r')
+    fs.readSync(fd1, headBuf, 0, headSize, 0)
+    fs.closeSync(fd1)
+
+    for (const line of headBuf.toString('utf-8').split('\n')) {
+      try {
+        const obj = JSON.parse(line.trim()) as RawLine
+        if (obj?.isMeta || obj?.type !== 'user') continue
+        for (const block of (obj.message?.content ?? [])) {
+          if (block.type === 'text' && block.text) {
+            const cleaned = block.text.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').trim()
+            if (cleaned && cleaned.length > 2) {
+              result.task = truncate(cleaned, 160)
+              break
+            }
+          }
+        }
+        if (result.task !== '(no prompt)') break
+      } catch { /* skip */ }
+    }
+
+    // Read last 20KB for recent tool activity
+    const tailSize = Math.min(20480, stat.size)
+    const tailBuf = Buffer.alloc(tailSize)
+    const fd2 = fs.openSync(filepath, 'r')
+    fs.readSync(fd2, tailBuf, 0, tailSize, stat.size - tailSize)
+    fs.closeSync(fd2)
+
+    const toolsSeen: string[] = []
+    for (const line of tailBuf.toString('utf-8').split('\n').reverse()) {
+      try {
+        const obj = JSON.parse(line.trim()) as RawLine
+        if (obj?.type !== 'assistant') continue
+        for (const block of (obj.message?.content ?? [])) {
+          if (block.type === 'tool_use' && block.name && !toolsSeen.includes(block.name)) {
+            toolsSeen.push(block.name)
+            if (toolsSeen.length >= 4) break
+          }
+        }
+        if (toolsSeen.length >= 4) break
+      } catch { /* skip */ }
+    }
+    result.recentTools = toolsSeen.reverse()
+  } catch { /* ignore */ }
+  return result
+}
 // Minimal inline type — avoids importing the optional orchestrator module
 interface RunRecord {
   status: string
@@ -80,10 +141,15 @@ function buildSessionContext(
     for (const s of active) {
       const proc = processes[s.sessionId]
       const dur = proc ? Math.floor((now - (proc.startedAt ?? now)) / 60_000) : 0
+      const brief = getSessionBrief(s.filepath)
+      // Prefer cached firstPrompt, fall back to deep read
+      const task = (s.firstPrompt && s.firstPrompt !== '(no prompt)')
+        ? s.firstPrompt : brief.task
       const act = s.currentActivity ? ` · **${s.currentActivity}**` : ''
-      lines.push(`- **${s.projectDisplayName}** — ${dur}m${act}`)
-      lines.push(`  Task: "${truncate(s.firstPrompt, 140)}"`)
-      if (proc?.cwd) lines.push(`  Path: \`${proc.cwd}\`  pid: ${proc.pid}`)
+      lines.push(`- **${s.projectDisplayName}** — ${dur}m${act} — pid:${proc?.pid ?? '?'}`)
+      lines.push(`  Task: "${truncate(task, 160)}"`)
+      if (brief.recentTools.length > 0) lines.push(`  Recent tools: ${brief.recentTools.join(', ')}`)
+      if (proc?.cwd) lines.push(`  Path: \`${proc.cwd}\``)
     }
   } else {
     lines.push('### Agents\nNo agents currently running.')
@@ -92,7 +158,11 @@ function buildSessionContext(
   if (recent.length > 0) {
     lines.push(`\n### ✅ Completed Today (${recent.length})`)
     for (const s of recent) {
-      lines.push(`- **${s.projectDisplayName}** — "${truncate(s.firstPrompt, 100)}" — ${relTime(s.mtime)}`)
+      const brief = getSessionBrief(s.filepath)
+      const task = (s.firstPrompt && s.firstPrompt !== '(no prompt)')
+        ? s.firstPrompt : brief.task
+      const tools = brief.recentTools.length > 0 ? ` [${brief.recentTools.slice(0, 3).join(', ')}]` : ''
+      lines.push(`- **${s.projectDisplayName}** — "${truncate(task, 120)}"${tools} — ${relTime(s.mtime)}`)
     }
   }
 
