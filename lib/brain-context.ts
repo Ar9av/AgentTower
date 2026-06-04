@@ -3,10 +3,17 @@ import path from 'path'
 import os from 'os'
 import { getRecentSessions, getClaudeDir } from './claude-fs'
 import { scanClaudeSessions } from './process'
-import { loadActiveRuns, loadOrchestratorConfig } from './orchestrator-config'
 import type { RecentSession } from './claude-fs'
 import type { ClaudeProcess } from './types'
 import type { RunRecord } from './orchestrator-types'
+
+// Orchestrator is an optional module — gracefully skip if not deployed
+function safeLoadActiveRuns(): RunRecord[] {
+  try { return require('./orchestrator-config').loadActiveRuns() } catch { return [] }
+}
+function safeLoadOrchestratorConfig(): { enabled: boolean; repos: unknown[] } {
+  try { return require('./orchestrator-config').loadOrchestratorConfig() } catch { return { enabled: false, repos: [] } }
+}
 
 // ── Paths ────────────────────────────────────────────────────────────────────
 
@@ -237,8 +244,8 @@ export function assembleBrainContext(userMessage?: string): BrainContext {
   const claudeDir = getClaudeDir()
   const sessions = getRecentSessions(30)
   const processes = scanClaudeSessions(claudeDir)
-  const activeRuns = loadActiveRuns()
-  const orchestratorConfig = loadOrchestratorConfig()
+  const activeRuns = safeLoadActiveRuns()
+  const orchestratorConfig = safeLoadOrchestratorConfig()
 
   const now = Date.now()
   const runningCount = sessions.filter(s => s.isActive).length
