@@ -5,6 +5,7 @@ import { getRecentSessions, getClaudeDir } from './claude-fs'
 import { scanClaudeSessions } from './process'
 import type { RecentSession } from './claude-fs'
 import type { ClaudeProcess } from './types'
+import { rankFacts, formatFactsForContext, getAllFacts } from './brain-memory'
 
 // ── Session brief: read JSONL for ai-title, away_summary (recap), tools ──────
 
@@ -178,6 +179,7 @@ function buildSessionContext(
       const title = brief.title || (s.firstPrompt !== '(no prompt)' ? s.firstPrompt : brief.task) || s.projectDisplayName
       const act = s.currentActivity ? ` · *${s.currentActivity}*` : ''
       lines.push(`- **${s.projectDisplayName}** — ${dur}m${act} — pid:${proc?.pid ?? '?'}`)
+      lines.push(`  sessionId: ${s.sessionId}`)
       lines.push(`  Title: "${truncate(title, 160)}"`)
       if (brief.summary) lines.push(`  Recap: "${truncate(brief.summary, 250)}"`)
       else if (brief.lastPrompt) lines.push(`  Last instruction: "${brief.lastPrompt}"`)
@@ -213,19 +215,14 @@ function buildOrchestratorContext(runs: RunRecord[]): string {
   return lines.join('\n')
 }
 
-function buildMemoryContext(): string {
+function buildMemoryContext(userMessage?: string): string {
   const lines: string[] = []
 
-  // 1. Brain's own persistent memory
-  const memPath = getBrainMemoryPath()
-  if (fs.existsSync(memPath)) {
-    try {
-      const content = fs.readFileSync(memPath, 'utf-8').trim()
-      if (content) {
-        lines.push('### 🧠 Brain Memory')
-        lines.push(truncate(content, 2000))
-      }
-    } catch { /* ignore */ }
+  // 1. Brain's own persistent memory — ranked by relevance to the query
+  const facts = rankFacts(userMessage ?? '', 10)
+  if (facts.length > 0) {
+    lines.push('### 🧠 Brain Memory (most relevant)')
+    lines.push(formatFactsForContext(facts))
   }
 
   // 2. Project-scoped memory files (Claude auto-memory)
@@ -366,11 +363,11 @@ export function assembleBrainContext(userMessage?: string): BrainContext {
 
   const sessionSection = buildSessionContext(sessions, processes)
   const orchestratorSection = buildOrchestratorContext(activeRuns)
-  const memorySection = buildMemoryContext()
+  const memorySection = buildMemoryContext(userMessage)
   const wikiSection = buildWikiContext(userMessage)
 
   const hasWiki = fs.existsSync(getVaultPath())
-  const hasMemory = fs.existsSync(getBrainMemoryPath())
+  const hasMemory = getAllFacts().length > 0
   const hasOrchestrator = orchestratorConfig.enabled && orchestratorConfig.repos.length > 0
 
   const parts = [
@@ -401,6 +398,85 @@ export function assembleBrainContext(userMessage?: string): BrainContext {
     hasMemory,
     hasOrchestrator,
   }
+}
+
+// ── Proactive alerts (cheap heuristics, no Claude call) ──────────────────────
+
+export interface BrainAlert {
+  id: string
+  level: 'error' | 'warn' | 'info'
+  title: string
+  detail: string
+  sessionId?: string
+  encodedFilepath?: string
+  ts: number
+}
+
+function scanForError(filepath: string): boolean {
+  try {
+    const stat = fs.statSync(filepath)
+    const size = Math.min(8192, stat.size)
+    const buf = Buffer.alloc(size)
+    const fd = fs.openSync(filepath, 'r')
+    fs.readSync(fd, buf, 0, size, stat.size - size)
+    fs.closeSync(fd)
+    const text = buf.toString('utf-8').toLowerCase()
+    return /\b(error|failed|exception|traceback|cannot find|enoent|fatal)\b/.test(text)
+  } catch { return false }
+}
+
+export function computeBrainAlerts(): BrainAlert[] {
+  const claudeDir = getClaudeDir()
+  const sessions = getRecentSessions(30)
+  const processes = scanClaudeSessions(claudeDir)
+  const now = Date.now()
+  const alerts: BrainAlert[] = []
+
+  const STALL_MS = 25 * 60 * 1000
+  const LONG_MS = 3 * 60 * 60 * 1000
+  const RECENT_DONE_MS = 30 * 60 * 1000
+
+  for (const s of sessions) {
+    const proc = processes[s.sessionId]
+
+    if (s.isActive) {
+      const idle = now - s.mtime
+      const dur = proc ? now - (proc.startedAt ?? now) : 0
+
+      if (idle > STALL_MS) {
+        alerts.push({
+          id: `stall-${s.sessionId}`, level: 'warn',
+          title: `${s.projectDisplayName} may be stalled`,
+          detail: `No activity for ${Math.floor(idle / 60000)} min`,
+          sessionId: s.sessionId, encodedFilepath: s.encodedFilepath, ts: s.mtime,
+        })
+      } else if (dur > LONG_MS) {
+        alerts.push({
+          id: `long-${s.sessionId}`, level: 'info',
+          title: `${s.projectDisplayName} running ${Math.floor(dur / 3600000)}h+`,
+          detail: 'Long-running session — check if it needs input',
+          sessionId: s.sessionId, encodedFilepath: s.encodedFilepath, ts: s.mtime,
+        })
+      }
+    } else if (now - s.mtime < RECENT_DONE_MS) {
+      const hadError = scanForError(s.filepath)
+      alerts.push({
+        id: `done-${s.sessionId}`,
+        level: hadError ? 'error' : 'info',
+        title: hadError
+          ? `${s.projectDisplayName} finished with errors`
+          : `${s.projectDisplayName} finished`,
+        detail: hadError ? 'Error keywords found near the end of the session' : `Completed ${relTime(s.mtime)}`,
+        sessionId: s.sessionId, encodedFilepath: s.encodedFilepath, ts: s.mtime,
+      })
+    }
+  }
+
+  alerts.sort((a, b) => {
+    const order = { error: 0, warn: 1, info: 2 }
+    return order[a.level] - order[b.level] || b.ts - a.ts
+  })
+  return alerts
 }
 
 // ── Memory write ─────────────────────────────────────────────────────────────

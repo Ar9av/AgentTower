@@ -130,8 +130,8 @@ export default function QuickLaunch() {
         p.decodedPath.toLowerCase().includes(filter.toLowerCase()))
     : projects
 
-  // Hide on login and inside session view (session has its own input)
-  if (pathname === '/login' || pathname?.startsWith('/session')) return null
+  // Hide on login, session view, and the brain page (each has its own input)
+  if (pathname === '/login' || pathname?.startsWith('/session') || pathname?.startsWith('/brain')) return null
 
   return (
     <>
