@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
 import { discoverProjects, listSessions, encodeB64 } from '@/lib/claude-fs'
+import { loadAllScores } from '@/lib/session-scoring'
 
 type Range = 'daily' | 'weekly' | 'monthly'
 
@@ -86,6 +87,24 @@ export async function GET(req: NextRequest) {
     .map(([date, v]) => ({ date, ...v }))
     .sort((a, b) => a.date.localeCompare(b.date))
 
+  // Quality metrics from session scores
+  const scores = loadAllScores()
+  let qualityMetrics: {
+    avgQuality: number; avgEfficiency: number; avgErrors: number
+    successRate: number; scoredSessions: number
+  } | null = null
+
+  if (scores.length > 0) {
+    const avg = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length
+    qualityMetrics = {
+      avgQuality: Math.round(avg(scores.map(s => s.qualityScore))),
+      avgEfficiency: Math.round(avg(scores.map(s => s.efficiencyScore))),
+      avgErrors: Math.round(avg(scores.map(s => s.errorCount)) * 10) / 10,
+      successRate: Math.round((scores.filter(s => s.completionSignal).length / scores.length) * 100),
+      scoredSessions: scores.length,
+    }
+  }
+
   const data = {
     range,
     timeline,
@@ -96,6 +115,7 @@ export async function GET(req: NextRequest) {
       projects: projects.length,
     },
     topSessions: topSessions.slice(0, 10),
+    qualityMetrics,
   }
 
   global.__clv_analytics_cache__ = { ts: Date.now(), data }

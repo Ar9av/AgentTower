@@ -6,6 +6,7 @@ import { scanClaudeSessions } from './process'
 import type { RecentSession } from './claude-fs'
 import type { ClaudeProcess } from './types'
 import { rankFacts, formatFactsForContext, getAllFacts } from './brain-memory'
+import { rankSkills, formatSkillsForContext } from './brain-skills'
 
 // ── Session brief: read JSONL for ai-title, away_summary (recap), tools ──────
 
@@ -225,7 +226,14 @@ function buildMemoryContext(userMessage?: string): string {
     lines.push(formatFactsForContext(facts))
   }
 
-  // 2. Project-scoped memory files (Claude auto-memory)
+  // 2. Skill library — relevant reusable prompt templates
+  const skills = rankSkills(userMessage ?? '', 4)
+  if (skills.length > 0) {
+    lines.push('\n### ⚡ Skill Library (relevant templates)')
+    lines.push(formatSkillsForContext(skills))
+  }
+
+  // 3. Project-scoped memory files (Claude auto-memory)
   const memDir = getProjectMemoryDir()
   if (memDir && fs.existsSync(memDir)) {
     try {

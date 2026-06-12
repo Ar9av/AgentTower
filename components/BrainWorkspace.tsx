@@ -20,6 +20,16 @@ interface Fact {
   text: string
 }
 
+interface Skill {
+  id: string
+  ts: number
+  name: string
+  description: string
+  prompt: string
+  tags: string[]
+  usageCount: number
+}
+
 const LEVEL_COLOR: Record<string, string> = {
   error: 'var(--red)', warn: 'var(--yellow)', info: 'var(--accent)',
 }
@@ -32,9 +42,11 @@ export default function BrainWorkspace() {
   const router = useRouter()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [facts, setFacts] = useState<Fact[]>([])
+  const [skills, setSkills] = useState<Skill[]>([])
   const [seed, setSeed] = useState('')
-  const [railTab, setRailTab] = useState<'alerts' | 'memory'>('alerts')
+  const [railTab, setRailTab] = useState<'alerts' | 'memory' | 'skills'>('alerts')
   const [chatState, setChatState] = useState<{ count: number; clear: () => void }>({ count: 0, clear: () => {} })
+  const [newSkill, setNewSkill] = useState<{ name: string; description: string; prompt: string; tags: string } | null>(null)
 
   const loadAlerts = useCallback(() => {
     fetch('/api/brain/watch').then(r => r.ok ? r.json() : { alerts: [] }).then(d => setAlerts(d.alerts ?? [])).catch(() => {})
@@ -42,12 +54,15 @@ export default function BrainWorkspace() {
   const loadFacts = useCallback(() => {
     fetch('/api/brain/memory').then(r => r.ok ? r.json() : { facts: [] }).then(d => setFacts(d.facts ?? [])).catch(() => {})
   }, [])
+  const loadSkills = useCallback(() => {
+    fetch('/api/brain/skills').then(r => r.ok ? r.json() : { skills: [] }).then(d => setSkills(d.skills ?? [])).catch(() => {})
+  }, [])
 
   useEffect(() => {
-    loadAlerts(); loadFacts()
+    loadAlerts(); loadFacts(); loadSkills()
     const id = setInterval(loadAlerts, 30_000)
     return () => clearInterval(id)
-  }, [loadAlerts, loadFacts])
+  }, [loadAlerts, loadFacts, loadSkills])
 
   function investigate(a: Alert) {
     setSeed(`Investigate this and tell me what's going on (read the session if needed): ${a.title} — ${a.detail}${a.sessionId ? ` (sessionId ${a.sessionId})` : ''}`)
@@ -58,19 +73,50 @@ export default function BrainWorkspace() {
     loadFacts()
   }
 
+  async function deleteSkill(id: string) {
+    await fetch(`/api/brain/skills?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+    loadSkills()
+  }
+
+  async function useSkill(skill: Skill) {
+    await fetch('/api/brain/skills', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'use', id: skill.id }),
+    })
+    setSeed(skill.prompt)
+    loadSkills()
+  }
+
+  async function saveNewSkill() {
+    if (!newSkill?.name.trim() || !newSkill?.prompt.trim()) return
+    await fetch('/api/brain/skills', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: newSkill.name,
+        description: newSkill.description,
+        prompt: newSkill.prompt,
+        tags: newSkill.tags.split(',').map(t => t.trim()).filter(Boolean),
+      }),
+    })
+    setNewSkill(null)
+    loadSkills()
+  }
+
   const Rail = (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* Rail tabs */}
       <div style={{ display: 'flex', gap: 4, padding: '10px 12px', borderBottom: '1px solid var(--glass-border)', flexShrink: 0 }}>
-        {(['alerts', 'memory'] as const).map(t => (
+        {(['alerts', 'memory', 'skills'] as const).map(t => (
           <button key={t} onClick={() => setRailTab(t)} style={{
-            flex: 1, padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            flex: 1, padding: '6px 6px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer',
             border: '1px solid', textTransform: 'capitalize',
             background: railTab === t ? 'var(--accent-dim)' : 'transparent',
             color: railTab === t ? 'var(--accent)' : 'var(--text3)',
             borderColor: railTab === t ? 'color-mix(in srgb, var(--accent) 28%, transparent)' : 'var(--glass-border)',
           }}>
-            {t === 'alerts' ? `Alerts${alerts.length ? ` · ${alerts.length}` : ''}` : `Memory${facts.length ? ` · ${facts.length}` : ''}`}
+            {t === 'alerts' ? `Alerts${alerts.length ? ` · ${alerts.length}` : ''}` : t === 'memory' ? `Memory${facts.length ? ` · ${facts.length}` : ''}` : `Skills${skills.length ? ` · ${skills.length}` : ''}`}
           </button>
         ))}
       </div>
@@ -136,6 +182,65 @@ export default function BrainWorkspace() {
                 <button onClick={() => deleteFact(f.id)} title="Forget" style={{
                   background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 13, padding: '0 2px', flexShrink: 0,
                 }}>✕</button>
+              </div>
+            ))}
+          </>
+        )}
+
+        {railTab === 'skills' && (
+          <>
+            <button onClick={() => setNewSkill({ name: '', description: '', prompt: '', tags: '' })} style={{
+              width: '100%', marginBottom: 10, padding: '7px 12px', borderRadius: 9, fontSize: 12, fontWeight: 600,
+              cursor: 'pointer', background: 'var(--accent-dim)', color: 'var(--accent)',
+              border: '1px solid color-mix(in srgb, var(--accent) 28%, transparent)',
+            }}>+ New Skill</button>
+
+            {newSkill && (
+              <div style={{ marginBottom: 10, padding: '12px', borderRadius: 10, background: 'var(--bg3)', border: '1px solid var(--glass-border)' }}>
+                <input value={newSkill.name} onChange={e => setNewSkill({ ...newSkill, name: e.target.value })} placeholder="Skill name" style={{ width: '100%', marginBottom: 6, padding: '6px 8px', borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--glass-border)', color: 'var(--text)', fontSize: 12, boxSizing: 'border-box' }} />
+                <input value={newSkill.description} onChange={e => setNewSkill({ ...newSkill, description: e.target.value })} placeholder="Short description" style={{ width: '100%', marginBottom: 6, padding: '6px 8px', borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--glass-border)', color: 'var(--text)', fontSize: 12, boxSizing: 'border-box' }} />
+                <textarea value={newSkill.prompt} onChange={e => setNewSkill({ ...newSkill, prompt: e.target.value })} placeholder="Prompt template…" rows={3} style={{ width: '100%', marginBottom: 6, padding: '6px 8px', borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--glass-border)', color: 'var(--text)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }} />
+                <input value={newSkill.tags} onChange={e => setNewSkill({ ...newSkill, tags: e.target.value })} placeholder="Tags (comma separated)" style={{ width: '100%', marginBottom: 8, padding: '6px 8px', borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--glass-border)', color: 'var(--text)', fontSize: 12, boxSizing: 'border-box' }} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={saveNewSkill} style={{ flex: 1, padding: '6px', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>Save</button>
+                  <button onClick={() => setNewSkill(null)} style={{ flex: 1, padding: '6px', borderRadius: 7, fontSize: 11, cursor: 'pointer', background: 'var(--glass-bg)', color: 'var(--text3)', border: '1px solid var(--glass-border)' }}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {skills.length === 0 && !newSkill && (
+              <div style={{ padding: '28px 10px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
+                No skills yet. Add reusable prompt templates here — Brain will inject relevant ones automatically.
+              </div>
+            )}
+
+            {skills.map(s => (
+              <div key={s.id} style={{
+                padding: '10px 12px', marginBottom: 8, borderRadius: 10,
+                background: 'var(--bg3)', border: '1px solid var(--glass-border)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 4 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{s.name}</div>
+                    {s.description && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.description}</div>}
+                  </div>
+                  <button onClick={() => deleteSkill(s.id)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 13, padding: '0 2px', flexShrink: 0 }}>✕</button>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6, fontFamily: 'monospace', background: 'var(--bg2)', padding: '4px 7px', borderRadius: 6, maxHeight: 56, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {s.prompt.slice(0, 120)}{s.prompt.length > 120 ? '…' : ''}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {s.tags.map(tag => (
+                    <span key={tag} style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: 'var(--accent-dim)', color: 'var(--accent)' }}>{tag}</span>
+                  ))}
+                  <span style={{ flex: 1 }} />
+                  {s.usageCount > 0 && <span style={{ fontSize: 10, color: 'var(--text3)' }}>used {s.usageCount}×</span>}
+                  <button onClick={() => useSkill(s)} style={{
+                    fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 6, cursor: 'pointer',
+                    background: 'var(--accent-dim)', color: 'var(--accent)',
+                    border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
+                  }}>Use</button>
+                </div>
               </div>
             ))}
           </>
