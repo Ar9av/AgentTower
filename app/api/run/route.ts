@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   const authErr = await requireAuth(req)
   if (authErr) return authErr
 
-  const { project_path, prompt, model } = await req.json().catch(() => ({}))
+  const { project_path, prompt, model, skip_permissions } = await req.json().catch(() => ({}))
   if (!project_path || !prompt) {
     return NextResponse.json({ error: 'project_path and prompt required' }, { status: 400 })
   }
@@ -21,7 +21,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid project path' }, { status: 400 })
   }
 
-  const args = ['--dangerously-skip-permissions']
+  const args: string[] = []
+  if (skip_permissions !== false) args.push('--dangerously-skip-permissions')
   if (typeof model === 'string' && model.trim()) args.push('--model', model.trim())
   args.push('-p', prompt)
 

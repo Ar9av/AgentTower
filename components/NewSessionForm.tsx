@@ -14,6 +14,7 @@ export default function NewSessionForm({ projectPath }: Props) {
   const [launching, setLaunching] = useState(false)
   const [error, setError] = useState('')
   const [image, setImage] = useState<AttachedImage | null>(null)
+  const [skipPerms, setSkipPerms] = useState(true)
 
   const handlePaste = useImagePaste(setImage)
 
@@ -51,7 +52,7 @@ export default function NewSessionForm({ projectPath }: Props) {
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_path: projectPath, prompt: finalPrompt }),
+        body: JSON.stringify({ project_path: projectPath, prompt: finalPrompt, skip_permissions: skipPerms }),
       })
       if (!res.ok) {
         const d = await res.json()
@@ -116,6 +117,16 @@ export default function NewSessionForm({ projectPath }: Props) {
                 style={{ flex: 1, fontSize: 16, padding: '10px 14px', borderRadius: 10, resize: 'none', lineHeight: 1.5 }}
               />
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)', cursor: 'pointer', userSelect: 'none', padding: '4px 0' }}>
+              <input
+                type="checkbox"
+                checked={skipPerms}
+                onChange={e => setSkipPerms(e.target.checked)}
+                style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: 'pointer' }}
+              />
+              <span>Skip permission prompts</span>
+              <span style={{ color: 'var(--text3)', fontSize: 11 }}>(--dangerously-skip-permissions)</span>
+            </label>
             <button
               type="submit"
               className="glass-btn-prominent"

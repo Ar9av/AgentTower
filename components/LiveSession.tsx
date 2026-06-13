@@ -243,10 +243,31 @@ export default function LiveSession({
     }, 2000)
   }
 
+  // ── Per-message model override ────────────────────────────────────────────
+  const [msgModel, setMsgModel] = useState('')
+
   // ── Actions ───────────────────────────────────────────────────────────────
   async function sendInput(e: React.FormEvent) {
     e.preventDefault()
     if ((!inputText.trim() && !attachedImage) || sending) return
+
+    // ── Slash commands ────────────────────────────────────────────────────
+    const trimmed = inputText.trim()
+    if (trimmed === '/export') {
+      setInputText('')
+      exportMarkdown()
+      return
+    }
+    if (trimmed === '/clear') {
+      if (!window.confirm('Clear visible messages? Session history on disk is preserved.')) return
+      setInputText('')
+      setMessages([])
+      setFirstMessage(null)
+      setTotal(0); setHiddenCount(0); setHasMore(false)
+      return
+    }
+    // /compact [hint] and other slash commands pass through to Claude
+
     setSending(true)
 
     let prompt = inputText.trim()
@@ -291,10 +312,12 @@ export default function LiveSession({
       }
 
       // 3. Send to Claude
+      const inputBody: Record<string, string> = { session_id: sessionId, prompt }
+      if (msgModel) inputBody.model = msgModel
       const res = await fetch('/api/input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, prompt }),
+        body: JSON.stringify(inputBody),
       })
       if (res.ok) {
         setProcState('running')
@@ -799,6 +822,7 @@ export default function LiveSession({
         onResumeProcess={resumeProcess} onStopAndResend={stopAndResend}
         projectPath={projectPath} pid={pid}
         model={model} onModelChange={changeModel}
+        msgModel={msgModel} onMsgModelChange={setMsgModel}
       />
 
       <style>{`
@@ -857,6 +881,8 @@ interface BarProps {
   pid: number | null
   model: string
   onModelChange: (m: string) => void
+  msgModel: string
+  onMsgModelChange: (m: string) => void
 }
 
 function ModelPicker({ value, onChange, compact }: { value: string; onChange: (v: string) => void; compact?: boolean }) {
@@ -901,9 +927,16 @@ function SpinIcon() {
   )
 }
 
-function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending, isThinking, attachedImage, onAttachImage, onSendInput, onKillAndRestart, onResumeProcess, onStopAndResend, pid, model, onModelChange }: BarProps) {
+const MSG_MODEL_IDS: Record<string, string> = {
+  sonnet: 'claude-sonnet-4-6',
+  opus:   'claude-opus-4-8',
+  haiku:  'claude-haiku-4-5-20251001',
+}
+
+function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending, isThinking, attachedImage, onAttachImage, onSendInput, onKillAndRestart, onResumeProcess, onStopAndResend, pid, model, onModelChange, msgModel, onMsgModelChange }: BarProps) {
   const handlePaste = useImagePaste(onAttachImage)
   const canSend = !!(inputText.trim() || attachedImage)
+  const [showOpts, setShowOpts] = useState(false)
 
   if (procState === 'running') return (
     <div className="chat-input-wrap">
@@ -962,8 +995,30 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
 
         <div className="chat-pill-footer">
           <ModelPicker value={model} onChange={onModelChange} compact />
-          <span className="chat-hint-inline">Enter to send · Shift+Enter for newline</span>
+          <button
+            type="button"
+            onClick={() => { setShowOpts(v => !v); if (showOpts) onMsgModelChange('') }}
+            style={{ fontSize: 11, color: msgModel ? 'var(--accent)' : 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 5 }}
+            title="Per-message model override"
+          >
+            {msgModel ? `↳ ${Object.entries(MSG_MODEL_IDS).find(([,v]) => v === msgModel)?.[0] ?? msgModel}` : '⚙ per-msg'}
+          </button>
+          <span className="chat-hint-inline">Enter to send · /export · /clear · /compact</span>
         </div>
+        {showOpts && (
+          <div style={{ maxWidth: 760, margin: '2px auto 0', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, padding: '6px 4px', animation: 'fadeIn 0.12s ease' }}>
+            <span style={{ color: 'var(--text3)' }}>Override model for next message:</span>
+            <div className="model-picker model-picker-compact">
+              {(['', 'sonnet', 'opus', 'haiku'] as const).map(m => (
+                <button key={m} type="button"
+                  className={`model-btn${msgModel === (m ? MSG_MODEL_IDS[m] : '') ? ' model-btn-active' : ''}`}
+                  onClick={() => onMsgModelChange(m ? MSG_MODEL_IDS[m] : '')}>
+                  {m || 'default'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </form>
     </div>
   )
