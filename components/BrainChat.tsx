@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import SkillPicker, { useSkills } from './SkillPicker'
 
 // ── Markdown renderer ─────────────────────────────────────────────────────────
 
@@ -302,6 +303,15 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  useSkills() // warm skill cache
+  const slashMatch = input.match(/\/(\w*)$/)
+  const showSkillPicker = slashMatch !== null
+  const skillQuery = slashMatch?.[1] ?? ''
+  function handleSkillSelect(name: string) {
+    setInput(input.replace(/\/\w*$/, `/${name} `))
+    inputRef.current?.focus()
+  }
+
   const execute = useActionExecutor((msg) => {
     const note: Message = { id: `sys-${Date.now()}`, role: 'brain', content: `✓ ${msg}`, ts: Date.now() }
     setMessages(prev => { const next = [...prev, note]; saveHistory(next); return next })
@@ -418,20 +428,29 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
 
       {/* Input */}
       <div style={{ padding: isPage ? `12px ${railPad} 16px` : '10px 14px 14px', borderTop: '1px solid var(--glass-border)', flexShrink: 0, background: 'var(--bg2)' }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', background: 'var(--bg3)', border: `1.5px solid ${loading ? 'color-mix(in srgb, var(--accent) 50%, var(--glass-border))' : 'var(--glass-border-hi)'}`, borderRadius: 14, padding: '6px 6px 6px 14px', transition: 'border-color 0.15s' }}>
-          <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-            placeholder="Ask, command, or describe what you need…" rows={1} disabled={loading}
-            style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', resize: 'none', color: 'var(--text)', fontSize: 'max(14px, 16px)', lineHeight: 1.55, padding: '5px 0', maxHeight: 140, overflowY: 'auto', fontFamily: 'inherit' }} />
-          {loading ? (
-            <button onClick={() => { abortRef.current?.abort(); setLoading(false) }} title="Stop"
-              style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', cursor: 'pointer', background: 'color-mix(in srgb, var(--red) 18%, transparent)', color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, alignSelf: 'flex-end', marginBottom: 1 }}>■</button>
-          ) : (
-            <button onClick={() => send()} disabled={!input.trim()} title="Send (Enter)"
-              style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', cursor: input.trim() ? 'pointer' : 'default', flexShrink: 0, alignSelf: 'flex-end', marginBottom: 1, background: input.trim() ? 'var(--accent)' : 'var(--glass-bg)', color: input.trim() ? '#000' : 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.12s' }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-            </button>
+        <div style={{ position: 'relative' }}>
+          {showSkillPicker && (
+            <SkillPicker
+              query={skillQuery}
+              onSelect={handleSkillSelect}
+              onDismiss={() => setInput(input.replace(/\/\w*$/, ''))}
+            />
           )}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', background: 'var(--bg3)', border: `1.5px solid ${loading ? 'color-mix(in srgb, var(--accent) 50%, var(--glass-border))' : 'var(--glass-border-hi)'}`, borderRadius: 14, padding: '6px 6px 6px 14px', transition: 'border-color 0.15s' }}>
+            <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !showSkillPicker) { e.preventDefault(); send() } }}
+              placeholder="Ask, command, or describe what you need… (type / for skills)" rows={1} disabled={loading}
+              style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', resize: 'none', color: 'var(--text)', fontSize: 'max(14px, 16px)', lineHeight: 1.55, padding: '5px 0', maxHeight: 140, overflowY: 'auto', fontFamily: 'inherit' }} />
+            {loading ? (
+              <button onClick={() => { abortRef.current?.abort(); setLoading(false) }} title="Stop"
+                style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', cursor: 'pointer', background: 'color-mix(in srgb, var(--red) 18%, transparent)', color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, alignSelf: 'flex-end', marginBottom: 1 }}>■</button>
+            ) : (
+              <button onClick={() => send()} disabled={!input.trim()} title="Send (Enter)"
+                style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', cursor: input.trim() ? 'pointer' : 'default', flexShrink: 0, alignSelf: 'flex-end', marginBottom: 1, background: input.trim() ? 'var(--accent)' : 'var(--glass-bg)', color: input.trim() ? '#000' : 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.12s' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+              </button>
+            )}
+          </div>
         </div>
         <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5, textAlign: 'center' }}>Enter · Shift+Enter for newline{variant === 'panel' ? ' · Esc to close' : ''}</p>
       </div>

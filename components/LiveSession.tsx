@@ -6,6 +6,7 @@ import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import SessionTagsButton from './SessionTagsButton'
+import SkillPicker, { useSkills } from './SkillPicker'
 
 type ProcState = 'running' | 'paused' | 'dead' | 'unknown'
 
@@ -937,6 +938,15 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
   const handlePaste = useImagePaste(onAttachImage)
   const canSend = !!(inputText.trim() || attachedImage)
   const [showOpts, setShowOpts] = useState(false)
+  useSkills() // warm cache
+
+  const slashMatch = inputText.match(/\/(\w*)$/)
+  const showPicker = slashMatch !== null
+  const skillQuery = slashMatch?.[1] ?? ''
+
+  function handleSkillSelect(name: string) {
+    setInputText(inputText.replace(/\/\w*$/, `/${name} `))
+  }
 
   if (procState === 'running') return (
     <div className="chat-input-wrap">
@@ -957,6 +967,14 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
           </div>
         )}
 
+        <div style={{ position: 'relative' }}>
+          {showPicker && (
+            <SkillPicker
+              query={skillQuery}
+              onSelect={handleSkillSelect}
+              onDismiss={() => setInputText(inputText.replace(/\/\w*$/, ''))}
+            />
+          )}
         <div className="chat-pill">
           <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
           <textarea
@@ -965,9 +983,9 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
             onChange={e => setInputText(e.target.value)}
             onPaste={handlePaste}
             onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSendInput(e) }
+              if (e.key === 'Enter' && !e.shiftKey && !showPicker) { e.preventDefault(); onSendInput(e) }
             }}
-            placeholder={isThinking ? 'Claude is thinking — send anyway or wait…' : 'Message Claude…'}
+            placeholder={isThinking ? 'Claude is thinking — send anyway or wait…' : 'Message Claude… (type / for skills)'}
             rows={1}
           />
           {inputText.trim() && pid && isThinking && (
@@ -992,6 +1010,7 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
             {sending ? <SpinIcon /> : <SendIcon />}
           </button>
         </div>
+        </div>
 
         <div className="chat-pill-footer">
           <ModelPicker value={model} onChange={onModelChange} compact />
@@ -1003,7 +1022,7 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
           >
             {msgModel ? `↳ ${Object.entries(MSG_MODEL_IDS).find(([,v]) => v === msgModel)?.[0] ?? msgModel}` : '⚙ per-msg'}
           </button>
-          <span className="chat-hint-inline">Enter to send · /export · /clear · /compact</span>
+          <span className="chat-hint-inline">Enter to send · /export · /clear · /compact · type / for skills</span>
         </div>
         {showOpts && (
           <div style={{ maxWidth: 760, margin: '2px auto 0', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, padding: '6px 4px', animation: 'fadeIn 0.12s ease' }}>
@@ -1072,23 +1091,32 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
           </div>
         )}
 
-        <div className="chat-pill">
-          <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
-          <textarea
-            className="chat-pill-textarea"
-            value={inputText}
-            onChange={e => setInputText(e.target.value)}
-            onPaste={handlePaste}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSendInput(e) }
-            }}
-            placeholder={wasInterrupted ? 'Resume or start fresh…' : 'Continue or start new…'}
-            rows={1}
-          />
-          <button type="submit" className="chat-send-btn" disabled={!canSend || sending}
-            title="Continue this session">
-            {sending ? <SpinIcon /> : <SendIcon />}
-          </button>
+        <div style={{ position: 'relative' }}>
+          {showPicker && (
+            <SkillPicker
+              query={skillQuery}
+              onSelect={handleSkillSelect}
+              onDismiss={() => setInputText(inputText.replace(/\/\w*$/, ''))}
+            />
+          )}
+          <div className="chat-pill">
+            <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
+            <textarea
+              className="chat-pill-textarea"
+              value={inputText}
+              onChange={e => setInputText(e.target.value)}
+              onPaste={handlePaste}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey && !showPicker) { e.preventDefault(); onSendInput(e) }
+              }}
+              placeholder={wasInterrupted ? 'Resume or start fresh…' : 'Continue or start new… (type / for skills)'}
+              rows={1}
+            />
+            <button type="submit" className="chat-send-btn" disabled={!canSend || sending}
+              title="Continue this session">
+              {sending ? <SpinIcon /> : <SendIcon />}
+            </button>
+          </div>
         </div>
 
         <div className="chat-action-row">
