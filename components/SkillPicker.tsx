@@ -12,6 +12,26 @@ interface Props {
   onDismiss: () => void
 }
 
+export function SkillButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Insert skill (or type /)"
+      style={{
+        background: 'none', border: 'none', cursor: 'pointer',
+        color: 'var(--text3)', padding: '4px 6px', borderRadius: 7,
+        fontSize: 16, lineHeight: 1, flexShrink: 0, display: 'flex',
+        alignItems: 'center', transition: 'color 0.12s',
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--accent)' }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text3)' }}
+    >
+      ⚡
+    </button>
+  )
+}
+
 let cachedSkills: Skill[] | null = null
 
 export function useSkills() {

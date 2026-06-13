@@ -593,11 +593,14 @@ main { animation: fadeIn 0.18s ease; }
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
-  /* Keep session-view at full height — shrinking it caused a body-level gap because
-     body min-height fills the remaining 56px with empty space below the session.
-     Instead, pad the chat-input-wrap to push content above the fixed tab bar. */
+  /* Session view is full 100dvh — tab bar overlays the bottom, so push content up */
   .chat-input-wrap {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 8px) !important;
+  }
+  /* Brain workspace height already subtracts 56px+safe-area — don't double-count */
+  .brain-workspace .chat-input-wrap,
+  .brain-chat-col > div:last-child {
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)) !important;
   }
 }
 

@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import SkillPicker, { useSkills } from './SkillPicker'
+import SkillPicker, { SkillButton, useSkills } from './SkillPicker'
 
 // ── Markdown renderer ─────────────────────────────────────────────────────────
 
@@ -311,6 +311,10 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
     setInput(input.replace(/\/\w*$/, `/${name} `))
     inputRef.current?.focus()
   }
+  function openSkillPicker() {
+    setInput(prev => prev.endsWith('/') ? prev : prev + '/')
+    inputRef.current?.focus()
+  }
 
   const execute = useActionExecutor((msg) => {
     const note: Message = { id: `sys-${Date.now()}`, role: 'brain', content: `✓ ${msg}`, ts: Date.now() }
@@ -436,7 +440,8 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
               onDismiss={() => setInput(input.replace(/\/\w*$/, ''))}
             />
           )}
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', background: 'var(--bg3)', border: `1.5px solid ${loading ? 'color-mix(in srgb, var(--accent) 50%, var(--glass-border))' : 'var(--glass-border-hi)'}`, borderRadius: 14, padding: '6px 6px 6px 14px', transition: 'border-color 0.15s' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', background: 'var(--bg3)', border: `1.5px solid ${loading ? 'color-mix(in srgb, var(--accent) 50%, var(--glass-border))' : 'var(--glass-border-hi)'}`, borderRadius: 14, padding: '6px 6px 6px 10px', transition: 'border-color 0.15s' }}>
+            <SkillButton onClick={openSkillPicker} />
             <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !showSkillPicker) { e.preventDefault(); send() } }}
               placeholder="Ask, command, or describe what you need… (type / for skills)" rows={1} disabled={loading}

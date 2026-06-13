@@ -6,7 +6,7 @@ import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import SessionTagsButton from './SessionTagsButton'
-import SkillPicker, { useSkills } from './SkillPicker'
+import SkillPicker, { SkillButton, useSkills } from './SkillPicker'
 
 type ProcState = 'running' | 'paused' | 'dead' | 'unknown'
 
@@ -947,6 +947,9 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
   function handleSkillSelect(name: string) {
     setInputText(inputText.replace(/\/\w*$/, `/${name} `))
   }
+  function openSkillPicker() {
+    setInputText(inputText.endsWith('/') ? inputText : inputText + '/')
+  }
 
   if (procState === 'running') return (
     <div className="chat-input-wrap">
@@ -977,6 +980,7 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
           )}
         <div className="chat-pill">
           <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
+          <SkillButton onClick={openSkillPicker} />
           <textarea
             className="chat-pill-textarea"
             value={inputText}
@@ -985,7 +989,7 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey && !showPicker) { e.preventDefault(); onSendInput(e) }
             }}
-            placeholder={isThinking ? 'Claude is thinking — send anyway or wait…' : 'Message Claude… (type / for skills)'}
+            placeholder={isThinking ? 'Claude is thinking — send anyway or wait…' : 'Message Claude…'}
             rows={1}
           />
           {inputText.trim() && pid && isThinking && (
@@ -1101,6 +1105,7 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
           )}
           <div className="chat-pill">
             <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
+            <SkillButton onClick={openSkillPicker} />
             <textarea
               className="chat-pill-textarea"
               value={inputText}
@@ -1109,7 +1114,7 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey && !showPicker) { e.preventDefault(); onSendInput(e) }
               }}
-              placeholder={wasInterrupted ? 'Resume or start fresh…' : 'Continue or start new… (type / for skills)'}
+              placeholder={wasInterrupted ? 'Resume or start fresh…' : 'Continue or start new…'}
               rows={1}
             />
             <button type="submit" className="chat-send-btn" disabled={!canSend || sending}
