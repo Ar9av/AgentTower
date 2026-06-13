@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { execSync } from 'child_process'
 import {
   RawJSONLLine,
   RawContentBlock,
@@ -12,6 +13,7 @@ import {
   SessionMeta,
   SearchResult,
   ClaudeProcess,
+  GitStatus,
 } from './types'
 import { scanClaudeSessions, getProcessState } from './process'
 import { loadProjectMeta, getWorkspaceRoot } from './project-meta'
@@ -551,7 +553,50 @@ function computeSessionCost(messages: ParsedMessage[]): number {
   return total
 }
 
+// ─── Git status ────────────────────────────────────────────────────────────
+
+export function getProjectGitStatus(projectPath: string): GitStatus | null {
+  if (!projectPath || !fs.existsSync(projectPath)) return null
+  try {
+    execSync(`git -C "${projectPath}" rev-parse --git-dir`, { stdio: 'ignore', timeout: 2000 })
+  } catch { return null }
+  try {
+    const branch = execSync(`git -C "${projectPath}" branch --show-current`, { encoding: 'utf8', timeout: 2000 }).trim() || null
+    const statusOut = execSync(`git -C "${projectPath}" status --porcelain`, { encoding: 'utf8', timeout: 2000 })
+    const isDirty = statusOut.trim().length > 0
+    let linesAdded = 0, linesRemoved = 0, modifiedCount = 0
+    try {
+      const diffOut = execSync(`git -C "${projectPath}" diff --numstat HEAD`, { encoding: 'utf8', timeout: 2000 })
+      for (const line of diffOut.trim().split('\n').filter(Boolean)) {
+        const parts = line.split('\t')
+        if (parts.length >= 2) {
+          const a = parseInt(parts[0], 10); const r = parseInt(parts[1], 10)
+          if (!isNaN(a)) linesAdded += a
+          if (!isNaN(r)) linesRemoved += r
+          modifiedCount++
+        }
+      }
+    } catch { /* diff can fail on clean repos */ }
+    return { branch, linesAdded, linesRemoved, modifiedCount, isDirty }
+  } catch { return null }
+}
+
 // ─── Session listing ────────────────────────────────────────────────────────
+
+/** Extract last meaningful assistant text as session summary. */
+function extractLastSummary(messages: ParsedMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.isMeta || m.type !== 'assistant') continue
+    for (const block of m.content) {
+      if (block.type === 'text' && block.text) {
+        const text = block.text.replace(/<[^>]+>/g, '').trim()
+        if (text.length > 20) return text.slice(0, 120)
+      }
+    }
+  }
+  return null
+}
 
 export function listSessions(projectDirName: string): SessionInfo[] {
   const projectsDir = getProjectsDir()
@@ -596,6 +641,11 @@ export function listSessions(projectDirName: string): SessionInfo[] {
     const gitBranch = messages.find(m => m.gitBranch)?.gitBranch
     const estimatedCostUsd = computeSessionCost(messages)
     const currentActivity = processState === 'running' ? readCurrentActivity(filepath) : null
+    const lastSummary = extractLastSummary(messages)
+    // Most frequently used model in this session
+    const modelCounts: Record<string, number> = {}
+    for (const m of messages) { if (m.model) modelCounts[m.model] = (modelCounts[m.model] ?? 0) + 1 }
+    const primaryModel = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
 
     sessions.push({
       sessionId,
@@ -604,6 +654,7 @@ export function listSessions(projectDirName: string): SessionInfo[] {
       mtime: stat.mtimeMs,
       sizeBytes: stat.size,
       firstPrompt,
+      lastSummary,
       messageCount,
       pid,
       processState,
@@ -612,6 +663,7 @@ export function listSessions(projectDirName: string): SessionInfo[] {
       gitBranch,
       estimatedCostUsd,
       currentActivity,
+      primaryModel,
     })
   }
 

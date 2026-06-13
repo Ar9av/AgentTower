@@ -1,13 +1,14 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getSessionToken, validateSession } from '@/lib/auth'
-import { listSessions, decodeB64, encodeB64, resolveProjectPath, detectContinuationChains } from '@/lib/claude-fs'
+import { listSessions, decodeB64, encodeB64, resolveProjectPath, detectContinuationChains, getProjectGitStatus } from '@/lib/claude-fs'
 import { getProjectMeta } from '@/lib/project-meta'
 import { loadSessionTags } from '@/lib/session-tags'
 import Nav from '@/components/Nav'
 import ProcessControls from '@/components/ProcessControls'
 import NewSessionForm from '@/components/NewSessionForm'
 import SessionTagsButton from '@/components/SessionTagsButton'
+import type { GitStatus } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,6 +31,7 @@ export default async function ProjectPage({ searchParams }: Props) {
   const title = meta?.displayName || projectPath.split('/').pop() || projectPath
   const chains = detectContinuationChains(dirName)
   const tagStore = loadSessionTags()
+  const gitStatus = getProjectGitStatus(projectPath)
 
   // Build reverse map: parentId → childId
   const childOf = new Map<string, string>()
@@ -54,9 +56,19 @@ export default async function ProjectPage({ searchParams }: Props) {
               <h1 style={{ margin: '0 0 3px', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>
                 {title}
               </h1>
-              <p style={{ margin: 0, color: 'var(--text3)', fontSize: 12, fontFamily: 'ui-monospace, monospace' }}>
-                {projectPath}
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                <p style={{ margin: 0, color: 'var(--text3)', fontSize: 12, fontFamily: 'ui-monospace, monospace' }}>
+                  {projectPath}
+                </p>
+                {gitStatus && (
+                  <span className="chip" style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }} title="Git status">
+                    ⎇ {gitStatus.branch ?? 'HEAD'}
+                    {gitStatus.linesAdded > 0 && <span style={{ color: 'var(--green)', marginLeft: 4 }}>+{gitStatus.linesAdded}</span>}
+                    {gitStatus.linesRemoved > 0 && <span style={{ color: 'var(--red)', marginLeft: 2 }}>-{gitStatus.linesRemoved}</span>}
+                    {gitStatus.isDirty && !gitStatus.linesAdded && !gitStatus.linesRemoved && <span style={{ color: 'var(--yellow)', marginLeft: 4 }}>dirty</span>}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -119,6 +131,18 @@ export default async function ProjectPage({ searchParams }: Props) {
   )
 }
 
+type SessionState = 'thinking' | 'permission' | 'active' | 'paused' | 'finished'
+
+function getSessionState(processState: string, currentActivity?: string | null): SessionState {
+  if (processState === 'paused') return 'paused'
+  if (processState !== 'running') return 'finished'
+  if (!currentActivity) return 'active'
+  const act = currentActivity.toLowerCase()
+  if (act.includes('ask') || act.includes('permission') || act === 'askuserquestion') return 'permission'
+  if (act === 'thinking') return 'thinking'
+  return 'active'
+}
+
 function activityLabel(processState: string, currentActivity?: string | null): string {
   if (processState === 'paused') return 'Paused'
   if (processState !== 'running') return 'Finished'
@@ -126,6 +150,25 @@ function activityLabel(processState: string, currentActivity?: string | null): s
   if (currentActivity === 'thinking') return 'Thinking…'
   if (currentActivity === 'writing') return 'Writing…'
   return `${currentActivity}…`
+}
+
+function StatusDot({ processState, currentActivity }: { processState: string; currentActivity?: string | null }) {
+  const state = getSessionState(processState, currentActivity)
+  if (state === 'thinking') return <span className="dot-thinking" />
+  if (state === 'permission') return <span className="dot-permission" />
+  if (state === 'active') return <span className="dot-waiting" />
+  if (state === 'paused') return <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--yellow)', display: 'inline-block', flexShrink: 0 }} />
+  return null
+}
+
+function modelShortName(model?: string | null): string | null {
+  if (!model) return null
+  const m = model.toLowerCase()
+  if (m.includes('haiku')) return 'haiku'
+  if (m.includes('opus')) return 'opus'
+  if (m.includes('sonnet')) return 'sonnet'
+  if (m.includes('fable')) return 'fable'
+  return null
 }
 
 function formatCost(usd: number): string {
@@ -149,9 +192,12 @@ function SessionRow({
   initialFavorite: boolean
   initialTags: string[]
 }) {
+  const state = getSessionState(s.processState, s.currentActivity)
   const chipClass =
-    s.processState === 'running' ? 'chip chip-green' :
-    s.processState === 'paused'  ? 'chip chip-yellow' : 'chip'
+    state === 'thinking'   ? 'chip chip-blue' :
+    state === 'permission' ? 'chip chip-orange' :
+    state === 'active'     ? 'chip chip-green' :
+    state === 'paused'     ? 'chip chip-yellow' : 'chip'
 
   const parentSession = parentId ? allSessions.find(x => x.sessionId === parentId) : null
   const childSession  = childId  ? allSessions.find(x => x.sessionId === childId)  : null
@@ -166,27 +212,42 @@ function SessionRow({
       borderColor: s.processState === 'running' ? 'rgba(61,214,140,0.20)' : undefined,
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <Link
-          href={`/session?f=${encodeB64(s.filepath)}`}
-          style={{
-            color: 'var(--text)',
-            fontWeight: 500,
-            fontSize: 14,
-            textDecoration: 'none',
-            display: 'block',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            marginBottom: 7,
-          }}
-        >
-          {s.firstPrompt}
-        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+          <StatusDot processState={s.processState} currentActivity={s.currentActivity} />
+          <Link
+            href={`/session?f=${encodeB64(s.filepath)}`}
+            style={{
+              color: 'var(--text)',
+              fontWeight: 500,
+              fontSize: 14,
+              textDecoration: 'none',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+            }}
+          >
+            {s.firstPrompt}
+          </Link>
+        </div>
+        {s.lastSummary && (
+          <p style={{
+            margin: '0 0 6px 14px', fontSize: 12, color: 'var(--text3)',
+            overflow: 'hidden', textOverflow: 'ellipsis',
+            display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical',
+            lineHeight: 1.4,
+          }}>
+            {s.lastSummary}
+          </p>
+        )}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <span className={chipClass}>{activityLabel(s.processState, s.currentActivity)}</span>
           <span className="chip">{s.messageCount} msg{s.messageCount !== 1 ? 's' : ''}</span>
           {s.estimatedCostUsd != null && s.estimatedCostUsd > 0 && (
             <span className="chip" title="Estimated cost">{formatCost(s.estimatedCostUsd)}</span>
+          )}
+          {modelShortName(s.primaryModel) && (
+            <span className="chip" title="Model used">{modelShortName(s.primaryModel)}</span>
           )}
           {s.gitBranch && (
             <span className="chip" style={{ fontFamily: 'ui-monospace, monospace' }} title="Git branch">

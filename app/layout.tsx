@@ -4,6 +4,7 @@ import ThemeProvider from '@/components/ThemeProvider'
 import SidebarProvider from '@/components/SidebarProvider'
 import Sidebar from '@/components/Sidebar'
 import QuickLaunch from '@/components/QuickLaunch'
+import CommandPalette from '@/components/CommandPalette'
 
 export const metadata: Metadata = {
   title: 'AgentTower',
@@ -24,6 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Sidebar />
             {children}
             <QuickLaunch />
+            <CommandPalette />
           </SidebarProvider>
         </ThemeProvider>
       </body>

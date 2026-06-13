@@ -140,7 +140,10 @@ export default function Sidebar() {
               >
                 {/* Project name + status */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  {s.isActive && <span className="dot-active" style={{ width: 6, height: 6 }} />}
+                  {s.isActive && s.currentActivity === 'thinking' && <span className="dot-thinking" />}
+                  {s.isActive && s.currentActivity && (s.currentActivity.toLowerCase().includes('ask') || s.currentActivity.toLowerCase().includes('permission')) && <span className="dot-permission" />}
+                  {s.isActive && s.currentActivity !== 'thinking' && !(s.currentActivity?.toLowerCase().includes('ask') || s.currentActivity?.toLowerCase().includes('permission')) && <span className="dot-waiting" />}
+                  {!s.isActive && <span style={{ width: 6, height: 6 }} />}
                   <span style={{ fontSize: 11, fontWeight: 600, color: s.isActive ? 'var(--green)' : 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     {s.projectDisplayName}
                   </span>

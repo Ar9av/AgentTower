@@ -493,12 +493,65 @@ function GenericToolBlock({ block, result }: { block: ContentBlock; result?: Con
   )
 }
 
+// ── Agent / subagent task block ───────────────────────────────────────────────
+function AgentTaskBlock({ block, result }: { block: ContentBlock; result?: ContentBlock }) {
+  const input = block.tool_input as { description?: string; prompt?: string; subagent_type?: string } | null
+  const isDone = result !== undefined
+  const isError = !!result?.is_error
+  const description = input?.description ?? (input?.prompt ? input.prompt.slice(0, 90) + (input.prompt.length > 90 ? '…' : '') : '')
+  const agentType = input?.subagent_type ?? ''
+  const resultText = result?.tool_result?.map(b => b.text ?? '').join('') ?? ''
+
+  return (
+    <details style={{ margin: '5px 0', background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.18)', borderRadius: 10, overflow: 'hidden' }}>
+      <summary style={SUMMARY_STYLE}>
+        <StatusDot isDone={isDone} isError={isError} />
+        <span style={{ color: 'var(--accent)', fontFamily: 'ui-monospace, monospace', fontSize: 12, fontWeight: 600, flexShrink: 0 }}>Agent</span>
+        {agentType && (
+          <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'ui-monospace, monospace', background: 'var(--bg3)', padding: '1px 6px', borderRadius: 4, flexShrink: 0 }}>
+            {agentType}
+          </span>
+        )}
+        {description && (
+          <span style={{ color: 'var(--text2)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+            {description}
+          </span>
+        )}
+        {!isDone && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'rgba(16,185,129,0.7)', flexShrink: 0 }}>running…</span>}
+      </summary>
+      <div style={{ borderTop: '1px solid rgba(16,185,129,0.18)' }}>
+        {input?.prompt && (
+          <>
+            <div style={{ padding: '3px 12px', fontSize: 10, color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', background: 'rgba(0,0,0,0.18)' }}>
+              Prompt
+            </div>
+            <pre style={{ margin: 0, padding: '8px 14px', fontSize: 12, overflowX: 'auto', overflowY: 'auto', maxHeight: 200, color: 'var(--text2)', fontFamily: 'ui-monospace, monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {input.prompt.slice(0, 600)}{input.prompt.length > 600 ? '…' : ''}
+            </pre>
+          </>
+        )}
+        {isDone && (
+          <>
+            <div style={{ padding: '3px 12px', fontSize: 10, color: isError ? 'var(--red)' : 'var(--text3)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', background: 'rgba(0,0,0,0.18)', borderTop: input?.prompt ? '1px solid var(--glass-border)' : undefined }}>
+              {isError ? 'Error' : 'Result'}
+            </div>
+            <pre style={{ margin: 0, padding: '8px 14px', fontSize: 12, overflowX: 'auto', overflowY: 'auto', maxHeight: 300, background: 'var(--bg3)', color: isError ? 'var(--red)' : 'var(--text2)', fontFamily: 'ui-monospace, monospace' }}>
+              {resultText || '(no output)'}
+            </pre>
+          </>
+        )}
+      </div>
+    </details>
+  )
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 function CombinedToolBlock({ block, result }: { block: ContentBlock; result?: ContentBlock }) {
   const name = block.tool_name ?? ''
   if (name === 'Edit' || name === 'MultiEdit') return <EditDiffBlock block={block} result={result} />
   if (name === 'Write') return <WriteBlock block={block} result={result} />
   if (name === 'Bash' || name === 'Shell') return <BashBlock block={block} result={result} />
+  if (name === 'Agent' || name === 'Task') return <AgentTaskBlock block={block} result={result} />
   if (name === 'TodoWrite' || name === 'TaskCreate') {
     const hasTodos = Array.isArray((block.tool_input as { todos?: unknown })?.todos)
     if (hasTodos) return <TodoListBlock block={block} result={result} />

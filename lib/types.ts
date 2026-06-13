@@ -84,6 +84,14 @@ export interface SessionMeta {
   tool_counts?: Record<string, number>
 }
 
+export interface GitStatus {
+  branch: string | null
+  linesAdded: number
+  linesRemoved: number
+  modifiedCount: number
+  isDirty: boolean
+}
+
 export interface SessionInfo {
   sessionId: string
   filepath: string
@@ -91,6 +99,7 @@ export interface SessionInfo {
   mtime: number
   sizeBytes: number
   firstPrompt: string
+  lastSummary?: string | null
   messageCount: number
   pid: number | null
   processState: 'running' | 'paused' | 'dead' | 'unknown'
@@ -99,6 +108,7 @@ export interface SessionInfo {
   gitBranch?: string
   estimatedCostUsd?: number
   currentActivity?: string | null
+  primaryModel?: string | null
 }
 
 // ─── Paginated session response ────────────────────────────────────────────
