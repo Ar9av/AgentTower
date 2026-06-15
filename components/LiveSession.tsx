@@ -918,6 +918,28 @@ function SendIcon() {
   )
 }
 
+function StopIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <rect x="3" y="3" width="18" height="18" rx="3"/>
+    </svg>
+  )
+}
+
+function QueueIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <line x1="8" y1="6" x2="21" y2="6"/>
+      <line x1="8" y1="12" x2="21" y2="12"/>
+      <line x1="8" y1="18" x2="21" y2="18"/>
+      <line x1="3" y1="6" x2="3.01" y2="6"/>
+      <line x1="3" y1="12" x2="3.01" y2="12"/>
+      <line x1="3" y1="18" x2="3.01" y2="18"/>
+    </svg>
+  )
+}
+
 function SpinIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -938,6 +960,11 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
   const handlePaste = useImagePaste(onAttachImage)
   const canSend = !!(inputText.trim() || attachedImage)
   const [showOpts, setShowOpts] = useState(false)
+  const [queue, setQueue] = useState<string[]>([])
+  const [queueMode, setQueueMode] = useState(false)
+  const [stopping, setStopping] = useState(false)
+  const prevIsThinking = useRef(isThinking)
+  const pendingQueueSend = useRef(false)
   useSkills() // warm cache
 
   const slashMatch = inputText.match(/\/(\w*)$/)
@@ -951,9 +978,65 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
     setInputText(inputText.endsWith('/') ? inputText : inputText + '/')
   }
 
+  async function stopSession() {
+    if (!pid) return
+    setStopping(true)
+    try {
+      await fetch('/api/kill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
+    } finally {
+      setStopping(false)
+    }
+  }
+
+  // Auto-dequeue: when Claude stops thinking and queue has messages, send next one
+  useEffect(() => {
+    if (prevIsThinking.current && !isThinking && queue.length > 0 && !sending) {
+      const [next, ...rest] = queue
+      setQueue(rest)
+      setInputText(next)
+      pendingQueueSend.current = true
+    }
+    prevIsThinking.current = isThinking
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isThinking])
+
+  useEffect(() => {
+    if (pendingQueueSend.current && inputText.trim() && !sending && !isThinking) {
+      pendingQueueSend.current = false
+      onSendInput({ preventDefault: () => {} } as React.FormEvent)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputText, sending, isThinking])
+
+  function handleSubmitOrQueue(e: React.FormEvent) {
+    e.preventDefault()
+    if (!inputText.trim() && !attachedImage) return
+    if (queueMode && inputText.trim()) {
+      setQueue(q => [...q, inputText.trim()])
+      setInputText('')
+    } else {
+      onSendInput(e)
+    }
+  }
+
   if (procState === 'running') return (
     <div className="chat-input-wrap">
-      <form onSubmit={onSendInput}>
+      <form onSubmit={handleSubmitOrQueue}>
+        {/* Queue list */}
+        {queue.length > 0 && (
+          <div style={{ maxWidth: 760, margin: '0 auto 8px', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: 'var(--text3)', flexShrink: 0 }}>Queued:</span>
+            {queue.map((msg, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px 3px 10px', background: 'color-mix(in srgb, var(--accent) 8%, var(--glass-bg))', border: '1px solid color-mix(in srgb, var(--accent) 20%, var(--glass-border))', borderRadius: 20, fontSize: 12, color: 'var(--text2)', maxWidth: '100%' }}>
+                <span style={{ fontWeight: 500, fontSize: 10, color: 'var(--accent)', marginRight: 2 }}>{i + 1}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 'min(220px, 50vw)' }}>{msg}</span>
+                <button type="button" onClick={() => setQueue(q => q.filter((_, j) => j !== i))}
+                  style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 0 0 2px', flexShrink: 0 }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Attachment preview */}
         {attachedImage && (
           <div style={{ maxWidth: 760, margin: '0 auto 8px', display: 'flex', alignItems: 'center', gap: 10,
@@ -978,42 +1061,54 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
               onDismiss={() => setInputText(inputText.replace(/\/\w*$/, ''))}
             />
           )}
-        <div className="chat-pill">
-          <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
-          <SkillButton onClick={openSkillPicker} />
-          <textarea
-            className="chat-pill-textarea"
-            value={inputText}
-            onChange={e => setInputText(e.target.value)}
-            onPaste={handlePaste}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey && !showPicker) { e.preventDefault(); onSendInput(e) }
-            }}
-            placeholder={isThinking ? 'Claude is thinking — send anyway or wait…' : 'Message Claude…'}
-            rows={1}
-          />
-          {inputText.trim() && pid && isThinking && (
-            <button
-              type="button"
-              onClick={onStopAndResend}
-              disabled={sending}
-              title="Stop current task and resend as new session"
-              style={{
-                background: 'color-mix(in srgb, var(--red) 14%, transparent)',
-                border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
-                color: 'var(--red)', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                padding: '5px 10px', cursor: 'pointer', flexShrink: 0, alignSelf: 'flex-end',
-                marginBottom: 1, whiteSpace: 'nowrap',
+          <div className="chat-pill">
+            <ImageAttachment image={attachedImage} onAttach={onAttachImage} onRemove={() => onAttachImage(null)} />
+            <SkillButton onClick={openSkillPicker} />
+            <textarea
+              className="chat-pill-textarea"
+              value={inputText}
+              onChange={e => setInputText(e.target.value)}
+              onPaste={handlePaste}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey && !showPicker) { e.preventDefault(); handleSubmitOrQueue(e) }
               }}
+              placeholder={
+                queueMode
+                  ? `Queue a message… (${queue.length} queued)`
+                  : isThinking
+                    ? 'Claude is thinking — send anyway or queue…'
+                    : 'Message Claude…'
+              }
+              rows={1}
+            />
+            {/* Stop button — always visible when running */}
+            {pid && (
+              <button
+                type="button"
+                onClick={stopSession}
+                disabled={stopping}
+                title="Stop Claude (SIGTERM)"
+                style={{
+                  width: 30, height: 30, borderRadius: '50%', border: 'none', flexShrink: 0,
+                  background: 'color-mix(in srgb, var(--red) 15%, transparent)',
+                  color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: stopping ? 'default' : 'pointer', alignSelf: 'flex-end', marginBottom: 2,
+                  transition: 'background 0.12s, opacity 0.12s', opacity: stopping ? 0.5 : 1,
+                }}
+              >
+                {stopping ? <SpinIcon /> : <StopIcon />}
+              </button>
+            )}
+            <button
+              type="submit"
+              className="chat-send-btn"
+              disabled={!canSend || sending}
+              title={queueMode ? 'Add to queue' : isThinking ? 'Send anyway' : 'Send message'}
+              style={queueMode ? { background: 'color-mix(in srgb, var(--accent) 70%, transparent)' } : undefined}
             >
-              {sending ? '…' : '⏹ Stop'}
+              {sending ? <SpinIcon /> : queueMode ? <QueueIcon /> : <SendIcon />}
             </button>
-          )}
-          <button type="submit" className="chat-send-btn" disabled={!canSend || sending}
-            title={isThinking ? 'Send anyway' : 'Send message'}>
-            {sending ? <SpinIcon /> : <SendIcon />}
-          </button>
-        </div>
+          </div>
         </div>
 
         <div className="chat-pill-footer">
@@ -1026,7 +1121,22 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
           >
             {msgModel ? `↳ ${Object.entries(MSG_MODEL_IDS).find(([,v]) => v === msgModel)?.[0] ?? msgModel}` : '⚙ per-msg'}
           </button>
-          <span className="chat-hint-inline">Enter to send · /export · /clear · /compact · type / for skills</span>
+          {/* Queue mode toggle */}
+          <button
+            type="button"
+            onClick={() => setQueueMode(v => !v)}
+            title={queueMode ? 'Queue mode on — messages queued until Claude is free' : 'Enable queue mode'}
+            style={{
+              fontSize: 11, fontWeight: 500, cursor: 'pointer', borderRadius: 6, padding: '2px 8px',
+              color: queueMode ? 'var(--accent)' : 'var(--text3)',
+              background: queueMode ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'none',
+              border: queueMode ? '1px solid color-mix(in srgb, var(--accent) 25%, transparent)' : '1px solid transparent',
+              transition: 'all 0.12s',
+            }}
+          >
+            {queueMode ? `⏳ Queue${queue.length > 0 ? ` (${queue.length})` : ''}` : '⏳ Queue'}
+          </button>
+          <span className="chat-hint-inline hide-mobile">Enter · /export · /clear · type / for skills</span>
         </div>
         {showOpts && (
           <div style={{ maxWidth: 760, margin: '2px auto 0', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, padding: '6px 4px', animation: 'fadeIn 0.12s ease' }}>
