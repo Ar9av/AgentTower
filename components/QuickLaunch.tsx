@@ -31,6 +31,7 @@ export default function QuickLaunch() {
   const [image, setImage] = useState<AttachedImage | null>(null)
   const [launching, setLaunching] = useState(false)
   const [error, setError] = useState('')
+  const [useWorktree, setUseWorktree] = useState(false)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const handlePaste = useImagePaste(setImage)
 
@@ -74,10 +75,12 @@ export default function QuickLaunch() {
     setPrompt('')
     setImage(null)
     setError('')
+    setUseWorktree(false)
   }
 
   function pick(p: ProjectInfo) {
     setSelected(p)
+    setUseWorktree(p.hasActive) // default to worktree when a session is already running
     setTimeout(() => promptRef.current?.focus(), 80)
   }
 
@@ -108,7 +111,7 @@ export default function QuickLaunch() {
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_path: selected.decodedPath, prompt: finalPrompt, model: MODEL_IDS[model] }),
+        body: JSON.stringify({ project_path: selected.decodedPath, prompt: finalPrompt, model: MODEL_IDS[model], use_worktree: useWorktree }),
       })
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
@@ -248,6 +251,27 @@ export default function QuickLaunch() {
                     style={{ flex: 1, fontSize: 16, padding: '11px 14px', borderRadius: 10, resize: 'none', lineHeight: 1.5 }}
                   />
                 </div>
+
+                {/* Worktree toggle */}
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', userSelect: 'none',
+                  color: useWorktree ? 'var(--accent)' : 'var(--text2)',
+                  padding: '6px 8px', borderRadius: 8,
+                  background: useWorktree ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--glass-bg)',
+                  border: `1px solid ${useWorktree ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : 'var(--glass-border)'}`,
+                  transition: 'all 0.12s',
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={useWorktree}
+                    onChange={e => setUseWorktree(e.target.checked)}
+                    style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontWeight: 500 }}>⎇ Isolated worktree</span>
+                  <span style={{ color: 'var(--text3)', fontSize: 11 }}>
+                    {selected?.hasActive ? 'recommended — session already running' : 'separate branch, no conflicts'}
+                  </span>
+                </label>
 
                 {/* Model picker + launch */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

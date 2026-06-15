@@ -5,9 +5,11 @@ import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment
 
 interface Props {
   projectPath: string
+  hasActive?: boolean
+  isGitRepo?: boolean
 }
 
-export default function NewSessionForm({ projectPath }: Props) {
+export default function NewSessionForm({ projectPath, hasActive, isGitRepo }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [prompt, setPrompt] = useState('')
@@ -15,6 +17,7 @@ export default function NewSessionForm({ projectPath }: Props) {
   const [error, setError] = useState('')
   const [image, setImage] = useState<AttachedImage | null>(null)
   const [skipPerms, setSkipPerms] = useState(true)
+  const [useWorktree, setUseWorktree] = useState(false)
 
   const handlePaste = useImagePaste(setImage)
 
@@ -52,7 +55,7 @@ export default function NewSessionForm({ projectPath }: Props) {
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_path: projectPath, prompt: finalPrompt, skip_permissions: skipPerms }),
+        body: JSON.stringify({ project_path: projectPath, prompt: finalPrompt, skip_permissions: skipPerms, use_worktree: useWorktree }),
       })
       if (!res.ok) {
         const d = await res.json()
@@ -127,6 +130,24 @@ export default function NewSessionForm({ projectPath }: Props) {
               <span>Skip permission prompts</span>
               <span style={{ color: 'var(--text3)', fontSize: 11 }}>(--dangerously-skip-permissions)</span>
             </label>
+            {isGitRepo && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', userSelect: 'none', padding: '4px 0',
+                color: useWorktree ? 'var(--accent)' : 'var(--text2)',
+                background: useWorktree ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
+                borderRadius: 8, marginLeft: -6, paddingLeft: 6,
+              }}>
+                <input
+                  type="checkbox"
+                  checked={useWorktree}
+                  onChange={e => setUseWorktree(e.target.checked)}
+                  style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: 'pointer' }}
+                />
+                <span>Isolated worktree</span>
+                <span style={{ color: 'var(--text3)', fontSize: 11 }}>
+                  {hasActive ? '— avoids conflicts with running session' : '— work on a separate branch'}
+                </span>
+              </label>
+            )}
             <button
               type="submit"
               className="glass-btn-prominent"

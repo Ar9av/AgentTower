@@ -74,7 +74,7 @@ export default async function ProjectPage({ searchParams }: Props) {
 
           {/* New session — full-width block below header */}
           <div style={{ marginTop: 16 }}>
-            <NewSessionForm projectPath={projectPath} />
+            <NewSessionForm projectPath={projectPath} hasActive={active.length > 0} isGitRepo={gitStatus !== null} />
           </div>
         </div>
 
