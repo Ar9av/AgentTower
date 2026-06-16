@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import fs from 'fs'
 import { validateSession } from '@/lib/auth'
 import { decodeB64, safePath, getClaudeDir, parseJsonlFile } from '@/lib/claude-fs'
+import { getCodexDir, parseCodexJsonlFile } from '@/lib/codex-fs'
 
 const HEARTBEAT_INTERVAL = 15_000
 const POLL_INTERVAL = 1_000   // reduced to 1s for snappier live updates
@@ -14,8 +15,11 @@ export async function GET(req: NextRequest) {
   }
 
   const encoded = req.nextUrl.searchParams.get('f') ?? ''
+  const mode = req.nextUrl.searchParams.get('mode') === 'codex' ? 'codex' : 'claude'
   const filepath = decodeB64(encoded)
-  if (!safePath(filepath, getClaudeDir())) {
+  const baseDir = mode === 'codex' ? getCodexDir() : getClaudeDir()
+  const parse = mode === 'codex' ? parseCodexJsonlFile : parseJsonlFile
+  if (!safePath(filepath, baseDir)) {
     return new Response('Forbidden', { status: 403 })
   }
 
@@ -35,7 +39,7 @@ export async function GET(req: NextRequest) {
       try { offset = fs.statSync(filepath).size } catch { /* file may not exist yet */ }
 
       // ── Send catchup ──────────────────────────────────────────────────────
-      const initial = parseJsonlFile(filepath)
+      const initial = parse(filepath)
       const catchup = initial.filter(m => !m.isMeta).slice(-CATCHUP_COUNT)
       for (const msg of catchup) {
         send(`data: ${JSON.stringify({ type: 'catchup', message: msg })}\n\n`)
@@ -75,7 +79,7 @@ export async function GET(req: NextRequest) {
 
           // File changed — re-parse and send only new messages
           // Re-parse always uses the freshest file (cache is mtime-keyed, so it re-parses on change)
-          const all = parseJsonlFile(filepath).filter(m => !m.isMeta)
+          const all = parse(filepath).filter(m => !m.isMeta)
           const newMsgs = all.slice(messageCount)
 
           if (newMsgs.length > 0) {

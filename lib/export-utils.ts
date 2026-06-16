@@ -1,6 +1,6 @@
 import type { ParsedMessage } from './types'
 
-export function sessionToMarkdown(messages: ParsedMessage[], sessionId: string): string {
+export function sessionToMarkdown(messages: ParsedMessage[], sessionId: string, assistantLabel = 'Claude'): string {
   const lines: string[] = [
     `# Session ${sessionId}`,
     ``,
@@ -14,7 +14,7 @@ export function sessionToMarkdown(messages: ParsedMessage[], sessionId: string):
     if (msg.isMeta) continue
     if (msg.uuid.startsWith('__optimistic__')) continue
 
-    const role = msg.type === 'user' ? 'You' : 'Claude'
+    const role = msg.type === 'user' ? 'You' : assistantLabel
     const ts = new Date(msg.timestamp).toLocaleString()
     lines.push(`## ${role}  ·  ${ts}`, ``)
 

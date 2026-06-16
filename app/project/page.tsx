@@ -2,18 +2,19 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getSessionToken, validateSession } from '@/lib/auth'
 import { listSessions, decodeB64, encodeB64, resolveProjectPath, detectContinuationChains, getProjectGitStatus } from '@/lib/claude-fs'
+import { listCodexSessions } from '@/lib/codex-fs'
 import { getProjectMeta } from '@/lib/project-meta'
 import { loadSessionTags } from '@/lib/session-tags'
 import Nav from '@/components/Nav'
 import ProcessControls from '@/components/ProcessControls'
 import NewSessionForm from '@/components/NewSessionForm'
 import SessionTagsButton from '@/components/SessionTagsButton'
-import type { GitStatus } from '@/lib/types'
+import type { AgentMode, SessionInfo } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
 interface Props {
-  searchParams: Promise<{ p?: string }>
+  searchParams: Promise<{ p?: string; mode?: string }>
 }
 
 export default async function ProjectPage({ searchParams }: Props) {
@@ -22,9 +23,84 @@ export default async function ProjectPage({ searchParams }: Props) {
 
   const params = await searchParams
   const encoded = params.p ?? ''
+  const mode: AgentMode = params.mode === 'codex' ? 'codex' : 'claude'
   if (!encoded) redirect('/projects')
 
   const dirName = decodeB64(encoded)
+  if (mode === 'codex') {
+    const projectPath = dirName
+    const meta = getProjectMeta(projectPath)
+    const title = meta?.displayName || projectPath.split('/').pop() || projectPath
+    const sessions = listCodexSessions(projectPath)
+    const gitStatus = getProjectGitStatus(projectPath)
+    const active = sessions.filter(s => s.isActive)
+    const history = sessions.filter(s => !s.isActive)
+
+    return (
+      <>
+        <Nav />
+        <main style={{ padding: '32px 28px', maxWidth: 1100, margin: '0 auto', width: '100%' }}>
+          <div style={{ marginBottom: 28 }}>
+            <Link href="/projects?mode=codex" style={{ color: 'var(--text2)', fontSize: 13, textDecoration: 'none' }}>
+              ← Codex Projects
+            </Link>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 10 }}>
+              <div>
+                <h1 style={{ margin: '0 0 3px', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>
+                  {title}
+                </h1>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                  <p style={{ margin: 0, color: 'var(--text3)', fontSize: 12, fontFamily: 'ui-monospace, monospace' }}>
+                    {projectPath}
+                  </p>
+                  <span className="chip">Codex exec</span>
+                  {gitStatus && (
+                    <span className="chip" style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }} title="Git status">
+                      ⎇ {gitStatus.branch ?? 'HEAD'}
+                      {gitStatus.linesAdded > 0 && <span style={{ color: 'var(--green)', marginLeft: 4 }}>+{gitStatus.linesAdded}</span>}
+                      {gitStatus.linesRemoved > 0 && <span style={{ color: 'var(--red)', marginLeft: 2 }}>-{gitStatus.linesRemoved}</span>}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <NewSessionForm projectPath={projectPath} hasActive={active.length > 0} isGitRepo={gitStatus !== null} mode="codex" />
+            </div>
+          </div>
+
+          {active.length > 0 && (
+            <section style={{ marginBottom: 32 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <span className="dot-active" />
+                <h2 style={{ fontSize: 12, fontWeight: 600, color: 'var(--green)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Recently Updated · {active.length}
+                </h2>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {active.map(s => <CodexSessionRow key={s.sessionId} session={s} />)}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <h2 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              History · {history.length}
+            </h2>
+            {history.length === 0 ? (
+              <p style={{ color: 'var(--text2)', fontSize: 14 }}>No completed Codex sessions yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {history.map(s => <CodexSessionRow key={s.sessionId} session={s} />)}
+              </div>
+            )}
+          </section>
+        </main>
+      </>
+    )
+  }
+
   const sessions = listSessions(dirName)
   const projectPath = resolveProjectPath(dirName)
   const meta = getProjectMeta(projectPath)
@@ -128,6 +204,53 @@ export default async function ProjectPage({ searchParams }: Props) {
         </section>
       </main>
     </>
+  )
+}
+
+function CodexSessionRow({ session }: { session: SessionInfo }) {
+  return (
+    <div className="glass" style={{
+      borderRadius: 12,
+      padding: '14px 18px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 14,
+      borderColor: session.isActive ? 'rgba(61,214,140,0.20)' : undefined,
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+          {session.isActive ? <span className="dot-active" /> : null}
+          <Link
+            href={`/session?mode=codex&f=${encodeB64(session.filepath)}`}
+            style={{
+              color: 'var(--text)',
+              fontWeight: 600,
+              fontSize: 14,
+              textDecoration: 'none',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {session.firstPrompt || `Session ${session.sessionId.slice(0, 8)}`}
+          </Link>
+          {session.isActive && <span className="chip chip-green">Updating</span>}
+        </div>
+        <div style={{ color: 'var(--text3)', fontSize: 12, marginBottom: 8 }}>
+          {session.lastSummary || 'No assistant response yet'}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="chip">{session.messageCount} msgs</span>
+          <span className="chip">{new Date(session.mtime).toLocaleString()}</span>
+          <span className="chip" style={{ fontFamily: 'ui-monospace, monospace' }}>{session.sessionId.slice(0, 12)}…</span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+        <Link href={`/session?mode=codex&f=${encodeB64(session.filepath)}`} className="chip" style={{ textDecoration: 'none', padding: '6px 12px' }}>
+          Open
+        </Link>
+      </div>
+    </div>
   )
 }
 

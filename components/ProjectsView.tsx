@@ -2,11 +2,12 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import type { ProjectInfo, AntigravityAgent } from '@/lib/types'
+import type { ProjectInfo, AntigravityAgent, AgentMode } from '@/lib/types'
 import LiveTailDrawer from './LiveTailDrawer'
 
 interface Props {
   initialProjects: ProjectInfo[]
+  initialMode: AgentMode
 }
 
 // Client-side b64url — must match server encodeB64
@@ -16,16 +17,26 @@ function b64url(s: string): string {
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-export default function ProjectsView({ initialProjects }: Props) {
+export default function ProjectsView({ initialProjects, initialMode }: Props) {
   const router = useRouter()
-  const [projects, setProjects] = useState(initialProjects)
+  const [nameOverrides, setNameOverrides] = useState<Record<string, string>>({})
   const [showAdd, setShowAdd] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [tailing, setTailing] = useState<ProjectInfo | null>(null)
   const [agAgents, setAgAgents] = useState<AntigravityAgent[]>([])
+  const mode = initialMode
+  const projects = initialProjects.map(project =>
+    nameOverrides[project.decodedPath]
+      ? { ...project, displayName: nameOverrides[project.decodedPath] }
+      : project
+  )
 
   useEffect(() => {
     async function fetchAgents() {
+      if (mode !== 'claude') {
+        setAgAgents([])
+        return
+      }
       try {
         const res = await fetch('/api/integrations/antigravity')
         if (!res.ok) return
@@ -36,9 +47,17 @@ export default function ProjectsView({ initialProjects }: Props) {
     fetchAgents()
     const t = setInterval(fetchAgents, 15000)
     return () => clearInterval(t)
-  }, [])
+  }, [mode])
 
   const activeCount = projects.filter(p => p.hasActive).length
+
+  function switchMode(nextMode: AgentMode) {
+    if (nextMode === mode) return
+    setShowAdd(false)
+    setRenaming(null)
+    setTailing(null)
+    router.push(`/projects?mode=${nextMode}`)
+  }
 
   async function handleRename(projectPath: string, displayName: string) {
     const res = await fetch('/api/projects/meta', {
@@ -47,7 +66,7 @@ export default function ProjectsView({ initialProjects }: Props) {
       body: JSON.stringify({ projectPath, displayName }),
     })
     if (res.ok) {
-      setProjects(ps => ps.map(p => p.decodedPath === projectPath ? { ...p, displayName } : p))
+      setNameOverrides(prev => ({ ...prev, [projectPath]: displayName }))
       setRenaming(null)
     } else {
       alert('Rename failed')
@@ -86,16 +105,35 @@ export default function ProjectsView({ initialProjects }: Props) {
             )}
           </p>
         </div>
-        <button
-          className="glass-btn-prominent"
-          onClick={() => setShowAdd(true)}
-          style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, minHeight: 40, width: 'auto' }}
-        >
-          + Add Project
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div
+            className="glass"
+            style={{ display: 'inline-flex', padding: 4, borderRadius: 12, gap: 4, minHeight: 40 }}
+          >
+            <ModeButton label="Claude" active={mode === 'claude'} onClick={() => switchMode('claude')} />
+            <ModeButton label="Codex" active={mode === 'codex'} onClick={() => switchMode('codex')} />
+          </div>
+          {mode === 'claude' && (
+            <button
+              className="glass-btn-prominent"
+              onClick={() => setShowAdd(true)}
+              style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, minHeight: 40, width: 'auto' }}
+            >
+              + Add Project
+            </button>
+          )}
+        </div>
       </div>
 
-      {agAgents.length > 0 && (
+      {mode === 'codex' && (
+        <div className="glass" style={{ borderRadius: 14, padding: '12px 16px', marginBottom: 20 }}>
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--text2)' }}>
+            Codex mode groups projects from <code>~/.codex/sessions</code> and uses <code>codex exec</code> plus <code>codex exec resume</code> for new work and continuation.
+          </p>
+        </div>
+      )}
+
+      {mode === 'claude' && agAgents.length > 0 && (
         <div style={{ marginBottom: 32 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <span className="section-heading">Antigravity Agents</span>
@@ -115,14 +153,20 @@ export default function ProjectsView({ initialProjects }: Props) {
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
           <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', margin: '0 0 6px', letterSpacing: '-0.01em' }}>No projects yet</p>
-          <p style={{ fontSize: 13, color: 'var(--text2)', margin: '0 0 20px' }}>Clone a repo or create a new workspace to get started.</p>
-          <button
-            className="glass-btn-prominent"
-            onClick={() => setShowAdd(true)}
-            style={{ display: 'inline-flex', width: 'auto', padding: '10px 24px', fontSize: 13, fontWeight: 600 }}
-          >
-            + Add Project
-          </button>
+          <p style={{ fontSize: 13, color: 'var(--text2)', margin: '0 0 20px' }}>
+            {mode === 'claude'
+              ? 'Clone a repo or create a new workspace to get started.'
+              : 'Run a Codex session in a workspace and it will appear here.'}
+          </p>
+          {mode === 'claude' && (
+            <button
+              className="glass-btn-prominent"
+              onClick={() => setShowAdd(true)}
+              style={{ display: 'inline-flex', width: 'auto', padding: '10px 24px', fontSize: 13, fontWeight: 600 }}
+            >
+              + Add Project
+            </button>
+          )}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: 12 }}>
@@ -163,7 +207,9 @@ function ProjectCard({
   onTail: () => void
 }) {
   const [draft, setDraft] = useState(project.displayName)
-  const href = `/project?p=${b64url(project.dirName)}`
+  const href = project.source === 'claude'
+    ? `/project?p=${b64url(project.dirName)}`
+    : `/project?mode=codex&p=${b64url(project.decodedPath)}`
 
   if (renaming) {
     return (
@@ -205,7 +251,7 @@ function ProjectCard({
       }}
     >
       <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 2 }}>
-        {project.hasActive && (
+        {project.source === 'claude' && project.hasActive && (
           <button
             onClick={e => { e.preventDefault(); e.stopPropagation(); onTail() }}
             title="Watch live output"
@@ -237,30 +283,63 @@ function ProjectCard({
         </button>
       </div>
       <Link href={href} style={{ textDecoration: 'none', display: 'block' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5, paddingRight: 52 }}>
-          {project.hasActive && <span className="dot-active" />}
-          <span style={{
-            fontWeight: 700, fontSize: 15, color: 'var(--text)',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            letterSpacing: '-0.02em',
-          }}>
-            {project.displayName}
-          </span>
-        </div>
-        <p style={{
-          margin: '0 0 14px', fontSize: 11, color: 'var(--text3)',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          fontFamily: 'ui-monospace, monospace',
-        }}>
-          {project.decodedPath}
-        </p>
-        <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className="chip">{project.sessionCount} session{project.sessionCount !== 1 ? 's' : ''}</span>
-          {project.latestMtime > 0 && <span className="chip">{formatRelative(project.latestMtime)}</span>}
-          {project.hasActive && <span className="chip chip-green">● Live</span>}
-        </div>
+        <ProjectCardBody project={project} />
       </Link>
     </div>
+  )
+}
+
+function ProjectCardBody({ project }: { project: ProjectInfo }) {
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5, paddingRight: 52 }}>
+        {project.hasActive && <span className="dot-active" />}
+        <span style={{
+          fontWeight: 700, fontSize: 15, color: 'var(--text)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          letterSpacing: '-0.02em',
+        }}>
+          {project.displayName}
+        </span>
+      </div>
+      <p style={{
+        margin: '0 0 14px', fontSize: 11, color: 'var(--text3)',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        fontFamily: 'ui-monospace, monospace',
+      }}>
+        {project.decodedPath}
+      </p>
+      <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span className="chip">{project.sessionCount} session{project.sessionCount !== 1 ? 's' : ''}</span>
+        {project.latestMtime > 0 && <span className="chip">{formatRelative(project.latestMtime)}</span>}
+        {project.hasActive && <span className="chip chip-green">● Live</span>}
+        {project.source === 'codex' && <span className="chip">exec/resume</span>}
+      </div>
+    </>
+  )
+}
+
+function ModeButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        border: 'none',
+        borderRadius: 9,
+        padding: '8px 14px',
+        minHeight: 32,
+        cursor: active ? 'default' : 'pointer',
+        background: active ? 'rgba(255,255,255,0.14)' : 'transparent',
+        color: active ? 'var(--text)' : 'var(--text2)',
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: '0.02em',
+      }}
+      aria-pressed={active}
+    >
+      {label}
+    </button>
   )
 }
 

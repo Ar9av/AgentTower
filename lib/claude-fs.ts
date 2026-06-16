@@ -468,6 +468,7 @@ export function discoverProjects(): ProjectInfo[] {
     const displayName = meta[decodedPath]?.displayName || path.basename(decodedPath) || decodedPath
 
     byPath.set(decodedPath, {
+      source: 'claude',
       dirName: entry.name,
       decodedPath,
       displayName,
@@ -489,6 +490,7 @@ export function discoverProjects(): ProjectInfo[] {
       try { mtime = fs.statSync(p).mtimeMs } catch {}
       const dirName = encodeProjectPath(p)
       byPath.set(p, {
+        source: 'claude',
         dirName,
         decodedPath: p,
         displayName: meta[p]?.displayName || e.name,
@@ -505,6 +507,7 @@ export function discoverProjects(): ProjectInfo[] {
     if (!fs.existsSync(p)) continue
     const dirName = p.replace(/\./g, '-').replace(/\//g, '-')
     byPath.set(p, {
+      source: 'claude',
       dirName,
       decodedPath: p,
       displayName: m.displayName || path.basename(p),

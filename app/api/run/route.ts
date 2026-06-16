@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
 import { spawnClaude } from "@/lib/spawn-claude"
+import { spawnCodex } from '@/lib/spawn-codex'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
   const authErr = await requireAuth(req)
   if (authErr) return authErr
 
-  const { project_path, prompt, model, skip_permissions, use_worktree } = await req.json().catch(() => ({}))
+  const { project_path, prompt, model, skip_permissions, use_worktree, mode } = await req.json().catch(() => ({}))
   if (!project_path || !prompt) {
     return NextResponse.json({ error: 'project_path and prompt required' }, { status: 400 })
   }
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
   let worktreePath: string | null = null
   let worktreeBranch: string | null = null
 
-  if (use_worktree && isGitRepo(project_path)) {
+  if (mode !== 'codex' && use_worktree && isGitRepo(project_path)) {
     try {
       const wt = createWorktree(project_path)
       cwd = wt.worktreePath
@@ -56,16 +57,21 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const args: string[] = []
-  if (skip_permissions !== false) args.push('--dangerously-skip-permissions')
-  if (typeof model === 'string' && model.trim()) args.push('--model', model.trim())
-  args.push('-p', prompt)
-
-  const proc = spawnClaude(args, {
-    cwd,
-    detached: true,
-    stdio: 'ignore',
-  })
+  let proc
+  if (mode === 'codex') {
+    const args: string[] = ['exec']
+    if (typeof model === 'string' && model.trim()) args.push('-m', model.trim())
+    if (skip_permissions !== false) args.push('--dangerously-bypass-approvals-and-sandbox')
+    if (!isGitRepo(cwd)) args.push('--skip-git-repo-check')
+    args.push(prompt)
+    proc = spawnCodex(args, { cwd, detached: true, stdio: 'ignore' })
+  } else {
+    const args: string[] = []
+    if (skip_permissions !== false) args.push('--dangerously-skip-permissions')
+    if (typeof model === 'string' && model.trim()) args.push('--model', model.trim())
+    args.push('-p', prompt)
+    proc = spawnClaude(args, { cwd, detached: true, stdio: 'ignore' })
+  }
   proc.unref()
 
   return NextResponse.json({ ok: true, pid: proc.pid, worktreePath, worktreeBranch })

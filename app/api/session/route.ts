@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
 import { parseJsonlFilePaginated, decodeB64, safePath, getClaudeDir } from '@/lib/claude-fs'
+import { getCodexDir, parseCodexJsonlFilePaginated } from '@/lib/codex-fs'
 
 export async function GET(req: NextRequest) {
   const authErr = await requireAuth(req)
@@ -8,9 +9,11 @@ export async function GET(req: NextRequest) {
 
   const encoded = req.nextUrl.searchParams.get('f')
   if (!encoded) return NextResponse.json({ error: 'Missing f param' }, { status: 400 })
+  const mode = req.nextUrl.searchParams.get('mode') === 'codex' ? 'codex' : 'claude'
 
   const filepath = decodeB64(encoded)
-  if (!safePath(filepath, getClaudeDir())) {
+  const baseDir = mode === 'codex' ? getCodexDir() : getClaudeDir()
+  if (!safePath(filepath, baseDir)) {
     return NextResponse.json({ error: 'Invalid path' }, { status: 403 })
   }
 
@@ -18,5 +21,9 @@ export async function GET(req: NextRequest) {
   const olderThan = req.nextUrl.searchParams.get('before') ?? undefined
   const around = req.nextUrl.searchParams.get('around') ?? undefined
 
-  return NextResponse.json(parseJsonlFilePaginated(filepath, limit, olderThan, around))
+  return NextResponse.json(
+    mode === 'codex'
+      ? parseCodexJsonlFilePaginated(filepath, limit, olderThan, around)
+      : parseJsonlFilePaginated(filepath, limit, olderThan, around)
+  )
 }

@@ -2,14 +2,16 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment'
+import type { AgentMode } from '@/lib/types'
 
 interface Props {
   projectPath: string
   hasActive?: boolean
   isGitRepo?: boolean
+  mode?: AgentMode
 }
 
-export default function NewSessionForm({ projectPath, hasActive, isGitRepo }: Props) {
+export default function NewSessionForm({ projectPath, hasActive, isGitRepo, mode = 'claude' }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [prompt, setPrompt] = useState('')
@@ -55,7 +57,7 @@ export default function NewSessionForm({ projectPath, hasActive, isGitRepo }: Pr
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_path: projectPath, prompt: finalPrompt, skip_permissions: skipPerms, use_worktree: useWorktree }),
+        body: JSON.stringify({ project_path: projectPath, prompt: finalPrompt, skip_permissions: skipPerms, use_worktree: useWorktree, mode }),
       })
       if (!res.ok) {
         const d = await res.json()
@@ -97,7 +99,7 @@ export default function NewSessionForm({ projectPath, hasActive, isGitRepo }: Pr
           }}
         >
           <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text2)' }}>
-            Start a new Claude session in{' '}
+            Start a new {mode === 'codex' ? 'Codex exec session' : 'Claude session'} in{' '}
             <span style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--accent)', fontSize: 12 }}>
               {projectPath.split('/').pop()}
             </span>
@@ -114,7 +116,7 @@ export default function NewSessionForm({ projectPath, hasActive, isGitRepo }: Pr
                   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e) }
                 }}
                 onPaste={handlePaste}
-                placeholder="What do you want Claude to do? Paste an image with Cmd+V"
+                placeholder={mode === 'codex' ? 'What do you want Codex to do? Paste an image with Cmd+V' : 'What do you want Claude to do? Paste an image with Cmd+V'}
                 autoFocus
                 rows={3}
                 style={{ flex: 1, fontSize: 16, padding: '10px 14px', borderRadius: 10, resize: 'none', lineHeight: 1.5 }}
@@ -128,9 +130,11 @@ export default function NewSessionForm({ projectPath, hasActive, isGitRepo }: Pr
                 style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: 'pointer' }}
               />
               <span>Skip permission prompts</span>
-              <span style={{ color: 'var(--text3)', fontSize: 11 }}>(--dangerously-skip-permissions)</span>
+              <span style={{ color: 'var(--text3)', fontSize: 11 }}>
+                {mode === 'codex' ? '(--dangerously-bypass-approvals-and-sandbox)' : '(--dangerously-skip-permissions)'}
+              </span>
             </label>
-            {isGitRepo && (
+            {mode !== 'codex' && isGitRepo && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', userSelect: 'none', padding: '4px 0',
                 color: useWorktree ? 'var(--accent)' : 'var(--text2)',
                 background: useWorktree ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
@@ -163,7 +167,7 @@ export default function NewSessionForm({ projectPath, hasActive, isGitRepo }: Pr
           )}
           {launching && (
             <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text2)' }}>
-              Starting Claude… new session will appear shortly.
+              Starting {mode === 'codex' ? 'Codex' : 'Claude'}… new session will appear shortly.
             </p>
           )}
         </div>

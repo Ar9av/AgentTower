@@ -62,7 +62,10 @@ export interface RawContentBlock {
 
 // ─── Project / session info ────────────────────────────────────────────────
 
+export type AgentMode = 'claude' | 'codex'
+
 export interface ProjectInfo {
+  source: AgentMode
   dirName: string          // raw dir name e.g. "-Users-ar9av-Documents-projects-foo"
   decodedPath: string      // /Users/ar9av/Documents/projects/foo
   displayName: string      // basename or full path
