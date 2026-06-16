@@ -54,7 +54,7 @@ export default function LoginPage() {
         </div>
 
         <h1 className="login-title">AgentTower</h1>
-        <p className="login-subtitle">Monitor your Claude Code sessions</p>
+        <p className="login-subtitle">Monitor your Claude Code and Codex CLI sessions</p>
 
         <div className="login-divider" />
 

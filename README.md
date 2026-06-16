@@ -1,12 +1,23 @@
 <div align="center">
   <img src="https://cdn-icons-png.flaticon.com/512/3016/3016606.png" width="72" alt="AgentTower logo" />
   <h1>AgentTower</h1>
-  <p>A real-time web UI for monitoring, searching, and controlling Claude Code sessions</p>
+  <p>A real-time web UI for monitoring, searching, and controlling Claude Code and Codex CLI sessions</p>
   <img src="./public/banner.png" alt="AgentTower banner" width="700" />
   <br/><br/>
 </div>
 
 > **For AI agents:** See [`AGENTS.md`](./AGENTS.md) — it has a fully automated setup script that requires only a password from the user.
+
+---
+
+## About
+
+AgentTower is a local control room for coding agents. It supports both **Claude Code** and **OpenAI Codex CLI**:
+
+- **Claude mode** reads sessions from `~/.claude/projects`, supports live steering, process controls, Tower view, analytics, bookmarks, and orchestrator workflows.
+- **Codex mode** reads sessions from `~/.codex/sessions`, groups them by project workspace, and supports starting work with `codex exec` plus continuing it with `codex exec resume`.
+
+You can switch between Claude and Codex at the top of the Projects view.
 
 ---
 
@@ -25,12 +36,12 @@ Open **http://localhost:3000** — sign in with the password you set. That's it.
 ## What it does
 
 ### Session viewer
-- **Full conversation rendering** — user messages, Claude responses, tool calls, tool results, thinking blocks
+- **Full conversation rendering** — user messages, agent responses, tool calls, tool results, thinking blocks
 - **Inline diff viewer** — `Edit` and `MultiEdit` tool calls render as a real red/green unified diff
 - **Terminal-style Bash** — `Bash` tool calls show the command with a `$` prompt and scrollable output
-- **Markdown tables** — tables in Claude's responses render as proper HTML tables
+- **Markdown tables** — tables in agent responses render as proper HTML tables
 - **Copy buttons** — copy any code block or message text with one click
-- **Live tail** — new messages appear in real time via SSE while Claude is running
+- **Live tail** — new messages appear in real time via SSE while the agent is running
 - **Deep-link to message** — search results jump straight to the matching message in context
 - **In-session filter** — type in the session header to filter messages by text
 - **Export to Markdown** — download the full conversation as a `.md` file
@@ -38,8 +49,14 @@ Open **http://localhost:3000** — sign in with the password you set. That's it.
 ### Session control
 - **Send input** — inject a new message into any running or finished session
 - **Fork from any message** — create a copy of the conversation up to any point and branch from there
-- **Kill / Pause / Resume** — full process control with confirmation
+- **Kill / Pause / Resume** — full process control for Claude sessions with confirmation
 - **Stop & resend** — kill the current task and immediately start a new one
+
+### Multi-agent support
+- **Claude mode** — project discovery from `~/.claude/projects`, live session steering, process-aware status, and Tower visualization
+- **Codex mode** — project discovery from `~/.codex/sessions`, `codex exec` launch, and `codex exec resume` continuation
+- **Codex model switcher** — choose the model for a new Codex run before launch, including a custom `codex exec --model` override
+- **Mode switcher** — swap between Claude and Codex project views from the top of the Projects page
 
 ### Global search
 - **Cross-session search** — grep across every session file with live results
@@ -56,7 +73,7 @@ Open **http://localhost:3000** — sign in with the password you set. That's it.
 - **Dark + light mode** — night sky in dark mode, warm sky in light mode
 
 ### Projects & navigation
-- **Projects grid** — all projects at a glance, active ones highlighted with a pulsing dot
+- **Projects grid** — Claude and Codex projects at a glance, active ones highlighted with a pulsing dot
 - **Session list** — Active / History split per project with message counts and cost estimates
 - **Git branch badge** — shows which branch each session ran on
 - **Cmd+K** — focus the global search from anywhere
@@ -73,7 +90,8 @@ Open **http://localhost:3000** — sign in with the password you set. That's it.
 
 - **Node.js 18+** — `node --version`
 - **npm 9+** — `npm --version`
-- **Claude Code** — sessions must exist at `~/.claude/projects/`
+- **Claude Code** — optional, needed for Claude mode and Tower/process controls
+- **Codex CLI** — optional, needed for Codex mode and `codex exec` / `codex exec resume`
 
 ---
 
@@ -85,6 +103,7 @@ All config via `.env.local` (gitignored).
 |---|---|---|---|
 | `AUTH_PASSWORD` | **Yes** | — | Login password |
 | `CLAUDE_DIR` | No | `~/.claude` | Claude config root |
+| `CODEX_DIR` | No | `~/.codex` | Codex config root |
 | `SESSION_TTL_DAYS` | No | `7` | Cookie lifetime in days |
 | `ACTIVE_THRESHOLD_SECS` | No | `300` | Seconds window for "active" badge |
 | `NEXT_PUBLIC_BASE_PATH` | No | — | Sub-path deployment, e.g. `/agents` |
@@ -154,8 +173,8 @@ agenttower/
 │   │   ├── tail/               SSE live stream
 │   │   ├── search/             cross-session grep
 │   │   ├── fork/               copy session up to a message UUID
-│   │   ├── run/                spawn new Claude process
-│   │   ├── input/              send message to running session
+│   │   ├── run/                spawn new Claude or Codex process
+│   │   ├── input/              send message to a running session
 │   │   ├── kill / pause /      process signals
 │   │   │   resume/
 │   │   ├── recent-sessions/    last N sessions across all projects
@@ -178,6 +197,7 @@ agenttower/
 ├── lib/
 │   ├── auth.ts                  PBKDF2 hashing, rate limiting, cookies
 │   ├── claude-fs.ts             JSONL parser, project discovery, search, SSE
+│   ├── codex-fs.ts              Codex session discovery and transcript parsing
 │   ├── types.ts                 shared TypeScript types
 │   └── world-engine/            tile-map renderer for the Tower scene
 ├── public/sprites/              agent + building sprite sheets
@@ -189,13 +209,14 @@ agenttower/
 
 ## How the data works
 
-Claude Code writes session logs to `~/.claude/projects/<encoded-path>/<session-id>.jsonl`. Each line is a JSON object (user message, assistant response, tool call, etc.).
+Claude Code writes session logs to `~/.claude/projects/<encoded-path>/<session-id>.jsonl`.
+Codex CLI writes session logs under `~/.codex/sessions/`.
 
 AgentTower:
-1. Walks `~/.claude/projects/` to discover all projects and sessions
-2. Parses JSONL files into typed `ParsedMessage` objects (cached by `path + mtime`)
-3. Reads `~/.claude/sessions/<pid>.json` to detect running processes
-4. Streams new lines via SSE by tracking file byte offsets
+1. Walks `~/.claude/projects/` for Claude projects and `~/.codex/sessions/` for Codex projects
+2. Parses JSONL files into typed transcript messages (cached by `path + mtime`)
+3. Reads `~/.claude/sessions/<pid>.json` to detect running Claude processes
+4. Streams new lines via SSE by tracking file byte offsets for both Claude and Codex transcripts
 
 ---
 
@@ -205,7 +226,7 @@ AgentTower:
 - **Exponential backoff** on failed logins: 2s → 4s → 8s → … capped at 1 hour per IP.
 - **HttpOnly + SameSite=Strict** cookies.
 - All API routes require a valid session cookie.
-- File paths validated against `CLAUDE_DIR` before reading (no path traversal).
+- File paths validated against `CLAUDE_DIR` or `CODEX_DIR` before reading (no path traversal).
 - Process signals verify the target PID is a `claude` process owned by the current user.
 
 **For remote/production access:**
@@ -221,6 +242,7 @@ AgentTower:
 |---|---|
 | `AUTH_PASSWORD is not set` | Create `.env.local` with `AUTH_PASSWORD=yourpassword` |
 | No projects showing | Check `~/.claude/projects/` exists and has `.jsonl` files |
+| No Codex projects showing | Check `~/.codex/sessions/` exists and Codex has been run at least once |
 | Live tail not updating | Check browser console for SSE errors; reload the page |
 | `EADDRINUSE` on port 3000 | `PORT=8484 npm start` |
 | Can't log in | No spaces or quotes around the password value in `.env.local` |

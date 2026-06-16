@@ -5,6 +5,15 @@ import type { PaginatedSession, ParsedMessage } from '@/lib/types'
 import MessageBlock from './MessageBlock'
 import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment'
 
+const CODEX_MODEL_OPTIONS = [
+  { value: '', label: 'Default model' },
+  { value: 'gpt-5.5', label: 'GPT-5.5' },
+  { value: 'gpt-5.4', label: 'GPT-5.4' },
+  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+  { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark' },
+  { value: '__custom__', label: 'Custom…' },
+] as const
+
 interface Props {
   initialData: PaginatedSession
   encodedFilepath: string
@@ -37,6 +46,8 @@ export default function CodexLiveSession({
   const [exporting, setExporting] = useState(false)
   const [sessionFilter, setSessionFilter] = useState('')
   const [replyTimedOut, setReplyTimedOut] = useState(false)
+  const [codexModelPreset, setCodexModelPreset] = useState('')
+  const [customCodexModel, setCustomCodexModel] = useState('')
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -66,6 +77,24 @@ export default function CodexLiveSession({
     }, 120)
     return () => clearTimeout(timer)
   }, [scrollTarget, messages.length])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const saved = localStorage.getItem('codex-model') || ''
+    const isPreset = CODEX_MODEL_OPTIONS.some(option => option.value === saved && option.value !== '__custom__')
+    if (isPreset) {
+      setCodexModelPreset(saved)
+      setCustomCodexModel('')
+      return
+    }
+    if (saved) {
+      setCodexModelPreset('__custom__')
+      setCustomCodexModel(saved)
+      return
+    }
+    setCodexModelPreset('')
+    setCustomCodexModel('')
+  }, [])
 
   useEffect(() => {
     const es = new EventSource(`/api/tail?mode=codex&f=${encodedFilepath}`)
@@ -113,6 +142,7 @@ export default function CodexLiveSession({
   }
 
   const handlePaste = useImagePaste(setAttachedImage)
+  const selectedModel = codexModelPreset === '__custom__' ? customCodexModel.trim() : codexModelPreset
 
   async function sendInput(e: React.FormEvent) {
     e.preventDefault()
@@ -161,7 +191,7 @@ export default function CodexLiveSession({
       const res = await fetch('/api/input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, prompt, mode: 'codex' }),
+        body: JSON.stringify({ session_id: sessionId, prompt, model: selectedModel, mode: 'codex' }),
       })
 
       if (res.ok) {
@@ -227,7 +257,8 @@ export default function CodexLiveSession({
         <button
           className="hide-mobile"
           onClick={() => {
-            const cmd = `cd ${projectPath} && codex exec resume ${sessionId}`
+            const modelArg = selectedModel ? ` --model ${selectedModel}` : ''
+            const cmd = `cd ${projectPath} && codex exec resume${modelArg} ${sessionId}`
             navigator.clipboard?.writeText(cmd).then(() => {
               setCopiedId(true)
               setTimeout(() => setCopiedId(false), 1200)
@@ -268,6 +299,54 @@ export default function CodexLiveSession({
         </div>
 
         <div className="session-header-chips" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <select
+            className="hide-mobile"
+            value={codexModelPreset}
+            onChange={e => {
+              const value = e.target.value
+              setCodexModelPreset(value)
+              if (value !== '__custom__') {
+                setCustomCodexModel('')
+                if (typeof window !== 'undefined') localStorage.setItem('codex-model', value)
+              }
+            }}
+            title="Model for continuing this Codex session"
+            style={{
+              background: 'var(--glass-bg)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: 6,
+              padding: '4px 8px',
+              fontSize: 12,
+              color: 'var(--text)',
+              maxWidth: 180,
+            }}
+          >
+            {CODEX_MODEL_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          {codexModelPreset === '__custom__' && (
+            <input
+              className="hide-mobile"
+              value={customCodexModel}
+              onChange={e => {
+                const value = e.target.value
+                setCustomCodexModel(value)
+                if (typeof window !== 'undefined') localStorage.setItem('codex-model', value)
+              }}
+              placeholder="Custom model"
+              title="Custom model for continuing this Codex session"
+              style={{
+                background: 'var(--glass-bg)',
+                border: '1px solid var(--glass-border)',
+                borderRadius: 6,
+                padding: '4px 8px',
+                fontSize: 12,
+                color: 'var(--text)',
+                width: 150,
+              }}
+            />
+          )}
           <button className="chip" onClick={() => window.location.reload()} style={{ cursor: 'pointer', padding: '3px 10px' }}>
             ⟳<span className="hide-mobile" style={{ marginLeft: 4 }}>Refresh</span>
           </button>
