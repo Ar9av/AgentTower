@@ -9,7 +9,7 @@
     "lint": "eslint",
     "telegram": "ts-node telegram/bot.ts",
     "mcp": "ts-node --transpile-only mcp-server.ts",
-    "orchestrator": "ts-node --transpile-only scripts/orchestrator/orchestrator-bot.ts"
+    "orchestrator": "ts-node --transpile-only --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\"}' scripts/orchestrator/orchestrator-bot.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
