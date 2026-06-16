@@ -8,7 +8,7 @@ import CommandPalette from '@/components/CommandPalette'
 
 export const metadata: Metadata = {
   title: 'AgentTower',
-  description: 'Monitor, tail, and control Claude Code sessions',
+  description: 'Monitor, tail, and control Claude Code and Codex CLI sessions',
 }
 
 export const viewport: Viewport = {

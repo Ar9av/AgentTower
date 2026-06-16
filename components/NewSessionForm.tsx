@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment'
 import type { AgentMode } from '@/lib/types'
@@ -11,6 +11,15 @@ interface Props {
   mode?: AgentMode
 }
 
+const CODEX_MODEL_OPTIONS = [
+  { value: '', label: 'Use Codex default', note: 'from ~/.codex/config.toml or CLI default' },
+  { value: 'gpt-5.5', label: 'GPT-5.5', note: 'recommended for most Codex tasks' },
+  { value: 'gpt-5.4', label: 'GPT-5.4', note: 'strong frontier model' },
+  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini', note: 'faster and cheaper for lighter tasks' },
+  { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark', note: 'research preview, very fast' },
+  { value: '__custom__', label: 'Custom model…', note: 'enter any model string manually' },
+] as const
+
 export default function NewSessionForm({ projectPath, hasActive, isGitRepo, mode = 'claude' }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -20,8 +29,28 @@ export default function NewSessionForm({ projectPath, hasActive, isGitRepo, mode
   const [image, setImage] = useState<AttachedImage | null>(null)
   const [skipPerms, setSkipPerms] = useState(true)
   const [useWorktree, setUseWorktree] = useState(false)
+  const [codexModelPreset, setCodexModelPreset] = useState('')
+  const [customCodexModel, setCustomCodexModel] = useState('')
 
   const handlePaste = useImagePaste(setImage)
+
+  useEffect(() => {
+    if (mode !== 'codex' || typeof window === 'undefined') return
+    const saved = localStorage.getItem('codex-model') || ''
+    const isPreset = CODEX_MODEL_OPTIONS.some(option => option.value === saved && option.value !== '__custom__')
+    if (isPreset) {
+      setCodexModelPreset(saved)
+      setCustomCodexModel('')
+      return
+    }
+    if (saved) {
+      setCodexModelPreset('__custom__')
+      setCustomCodexModel(saved)
+      return
+    }
+    setCodexModelPreset('')
+    setCustomCodexModel('')
+  }, [mode])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -57,7 +86,16 @@ export default function NewSessionForm({ projectPath, hasActive, isGitRepo, mode
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_path: projectPath, prompt: finalPrompt, skip_permissions: skipPerms, use_worktree: useWorktree, mode }),
+        body: JSON.stringify({
+          project_path: projectPath,
+          prompt: finalPrompt,
+          model: mode === 'codex'
+            ? (codexModelPreset === '__custom__' ? customCodexModel.trim() : codexModelPreset)
+            : undefined,
+          skip_permissions: skipPerms,
+          use_worktree: useWorktree,
+          mode,
+        }),
       })
       if (!res.ok) {
         const d = await res.json()
@@ -122,6 +160,48 @@ export default function NewSessionForm({ projectPath, hasActive, isGitRepo, mode
                 style={{ flex: 1, fontSize: 16, padding: '10px 14px', borderRadius: 10, resize: 'none', lineHeight: 1.5 }}
               />
             </div>
+            {mode === 'codex' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={{ fontSize: 12, color: 'var(--text2)' }}>Model</span>
+                  <select
+                    className="glass-input"
+                    value={codexModelPreset}
+                    onChange={e => {
+                      const value = e.target.value
+                      setCodexModelPreset(value)
+                      if (value !== '__custom__') {
+                        setCustomCodexModel('')
+                        if (typeof window !== 'undefined') localStorage.setItem('codex-model', value)
+                      }
+                    }}
+                    style={{ fontSize: 13, padding: '10px 12px', borderRadius: 10 }}
+                  >
+                    {CODEX_MODEL_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.label} {option.note ? `· ${option.note}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {codexModelPreset === '__custom__' && (
+                  <input
+                    className="glass-input"
+                    value={customCodexModel}
+                    onChange={e => {
+                      const value = e.target.value
+                      setCustomCodexModel(value)
+                      if (typeof window !== 'undefined') localStorage.setItem('codex-model', value)
+                    }}
+                    placeholder="e.g. gpt-5.5 or another Codex-supported model"
+                    style={{ fontSize: 13, padding: '10px 12px', borderRadius: 10 }}
+                  />
+                )}
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--text3)' }}>
+                  Passed to <code>codex exec --model</code>. Availability depends on your Codex account, sign-in method, and CLI version.
+                </p>
+              </div>
+            )}
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)', cursor: 'pointer', userSelect: 'none', padding: '4px 0' }}>
               <input
                 type="checkbox"
