@@ -6,6 +6,7 @@ import {
   saveRunRecord,
   generateRunId,
 } from '@/lib/orchestrator-config'
+import { getDaemonStatus, startDaemon } from '@/lib/orchestrator-daemon'
 import type { RunRecord } from '@/lib/orchestrator-types'
 
 // POST /api/orchestrator/dispatch — approval-gated manual dispatch
@@ -23,14 +24,35 @@ export async function POST(req: NextRequest) {
   }
 
   const cfg = loadOrchestratorConfig()
+  if (!cfg.enabled) {
+    return NextResponse.json(
+      { error: 'Orchestrator is disabled. Enable it in Config before dispatching issues.' },
+      { status: 409 },
+    )
+  }
+
   const repo = cfg.repos.find(r => r.id === repoId)
   if (!repo) return NextResponse.json({ error: `Repo ${repoId} not found` }, { status: 404 })
+  if (!repo.enabled) {
+    return NextResponse.json({ error: `Repo ${repo.repo} is disabled in orchestrator config.` }, { status: 409 })
+  }
 
   // Guard: don't create a duplicate active run for the same issue
   const active = loadActiveRuns()
   const existing = active.find(r => r.repoId === repoId && r.issueNumber === issueNumber)
   if (existing) {
     return NextResponse.json({ ok: true, id: existing.id, note: 'already active' })
+  }
+
+  const daemon = getDaemonStatus()
+  if (!daemon.running) {
+    const started = startDaemon()
+    if (!started.ok) {
+      return NextResponse.json(
+        { error: `Orchestrator daemon is not running and could not be started: ${started.error}` },
+        { status: 500 },
+      )
+    }
   }
 
   const run: RunRecord = {

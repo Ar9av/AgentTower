@@ -18,6 +18,18 @@ interface RunsData {
   runs: RunRecord[]
 }
 
+interface OrchestratorConfigData {
+  config: {
+    enabled: boolean
+  }
+}
+
+interface DaemonStatus {
+  running: boolean
+  pid: number | null
+  uptimeSec: number | null
+}
+
 const STATE_LABEL: Record<IssueState, string> = {
   'todo': 'Todo',
   'in-progress': 'In progress',
@@ -48,8 +60,8 @@ const STATUS_EMOJI: Record<string, string> = {
 
 const COLUMNS: IssueState[] = ['todo', 'in-progress', 'done', 'rework']
 
-function RelativeTime({ ts }: { ts: string }) {
-  const diff = Date.now() - new Date(ts).getTime()
+function RelativeTime({ ts, nowMs }: { ts: string; nowMs: number }) {
+  const diff = nowMs - new Date(ts).getTime()
   const m = Math.floor(diff / 60_000)
   if (m < 1) return <span>just now</span>
   if (m < 60) return <span>{m}m ago</span>
@@ -64,12 +76,14 @@ function IssueCard({
   onDispatch,
   dispatching,
   sessionPath,
+  nowMs,
 }: {
   issue: IssueRecord
   run?: RunRecord
   onDispatch: (repoId: string, number: number, title: string) => void
   dispatching: boolean
   sessionPath?: string
+  nowMs: number
 }) {
   const sessionLink = sessionPath ? `/session?f=${encodeURIComponent(sessionPath)}` : null
 
@@ -95,7 +109,7 @@ function IssueCard({
             {issue.title}
           </a>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-            {issue.repoId} · <RelativeTime ts={issue.updatedAt} />
+            {issue.repoId} · <RelativeTime ts={issue.updatedAt} nowMs={nowMs} />
           </div>
         </div>
       </div>
@@ -130,7 +144,7 @@ function IssueCard({
           )}
           {run.nextRetryAt && run.status === 'retrying' && (
             <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text3)' }}>
-              Retry at <RelativeTime ts={run.nextRetryAt} />
+              Retry at <RelativeTime ts={run.nextRetryAt} nowMs={nowMs} />
             </p>
           )}
         </div>
@@ -155,25 +169,39 @@ export default function OrchestratorBoard() {
   const [issues, setIssues] = useState<IssueRecord[]>([])
   const [runs, setRuns] = useState<RunRecord[]>([])
   const [sessionMap, setSessionMap] = useState<Map<string, string>>(new Map())
+  const [orchestratorEnabled, setOrchestratorEnabled] = useState(true)
+  const [daemonStatus, setDaemonStatus] = useState<DaemonStatus | null>(null)
+  const [nowMs, setNowMs] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [dispatchingKey, setDispatchingKey] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     try {
-      const [issuesRes, runsRes, sessionsRes] = await Promise.all([
+      const [issuesRes, runsRes, sessionsRes, configRes, daemonRes] = await Promise.all([
         fetch('/api/orchestrator/issues'),
         fetch('/api/orchestrator/runs'),
         fetch('/api/recent-sessions?limit=50'),
+        fetch('/api/orchestrator/config'),
+        fetch('/api/orchestrator/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'status' }),
+        }),
       ])
       const issuesData: BoardData = await issuesRes.json()
       const runsData: RunsData = await runsRes.json()
       const sessions: RecentSession[] = (await sessionsRes.json()) ?? []
+      const configData: OrchestratorConfigData = await configRes.json()
+      const daemonData: DaemonStatus = await daemonRes.json()
       const map = new Map<string, string>()
       for (const s of sessions) map.set(s.sessionId, s.encodedFilepath)
       setIssues(issuesData.issues ?? [])
       setRuns(runsData.runs ?? [])
       setSessionMap(map)
+      setOrchestratorEnabled(Boolean(configData.config?.enabled))
+      setDaemonStatus(daemonData)
+      setNowMs(new Date().getTime())
     } catch (e) {
       setError(String(e))
     } finally {
@@ -190,15 +218,20 @@ export default function OrchestratorBoard() {
   const handleDispatch = async (repoId: string, issueNumber: number, issueTitle: string) => {
     const key = `${repoId}:${issueNumber}`
     setDispatchingKey(key)
+    setError('')
     try {
-      await fetch('/api/orchestrator/dispatch', {
+      const res = await fetch('/api/orchestrator/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repoId, issueNumber, issueTitle }),
       })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(payload.error ?? `HTTP ${res.status}`)
+      }
       await loadData()
     } catch (e) {
-      setError(String(e))
+      setError(e instanceof Error ? e.message : String(e))
     } finally {
       setDispatchingKey(null)
     }
@@ -266,6 +299,21 @@ export default function OrchestratorBoard() {
 
   return (
     <div>
+      {(!orchestratorEnabled || !daemonStatus?.running) && (
+        <div style={{
+          marginBottom: 14,
+          padding: '12px 14px',
+          borderRadius: 10,
+          border: '1px solid color-mix(in srgb, #f59e0b 35%, var(--border))',
+          background: 'color-mix(in srgb, #f59e0b 8%, var(--surface))',
+          color: 'var(--text2)',
+          fontSize: 12,
+        }}>
+          {!orchestratorEnabled
+            ? 'Orchestrator is disabled. Dispatch will not run until you enable it in Config.'
+            : 'Orchestrator daemon is offline. New dispatches will try to start it automatically.'}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8, alignItems: 'flex-start' }}>
         {COLUMNS.map(state => (
           <div key={state} style={colStyle}>
@@ -287,6 +335,7 @@ export default function OrchestratorBoard() {
                     onDispatch={handleDispatch}
                     dispatching={dispatchingKey === key}
                     sessionPath={run?.sessionId ? sessionMap.get(run.sessionId) : undefined}
+                    nowMs={nowMs}
                   />
                 )
               })}
