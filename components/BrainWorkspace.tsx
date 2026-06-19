@@ -57,6 +57,7 @@ export default function BrainWorkspace() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [seed, setSeed] = useState('')
   const [railTab, setRailTab] = useState<'agents' | 'alerts' | 'memory' | 'skills'>('agents')
+  const [railOpen, setRailOpen] = useState(false)
   const [chatState, setChatState] = useState<{ count: number; clear: () => void }>({ count: 0, clear: () => {} })
   const [newSkill, setNewSkill] = useState<{ name: string; description: string; prompt: string; tags: string } | null>(null)
 
@@ -292,16 +293,20 @@ export default function BrainWorkspace() {
   return (
     <main className="brain-workspace">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', borderBottom: '1px solid var(--glass-border)', flexShrink: 0, background: 'var(--bg2)' }}>
+      <div className="brain-header" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', borderBottom: '1px solid var(--glass-border)', flexShrink: 0, background: 'var(--bg2)' }}>
         <div style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, background: 'color-mix(in srgb, var(--accent) 15%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 32%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>Brain</div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Unified orchestrator · reads sessions, wiki & memory · acts on your agents</div>
+          <div className="brain-subtitle" style={{ fontSize: 11, color: 'var(--text3)' }}>Unified orchestrator · reads sessions, wiki & memory · acts on your agents</div>
         </div>
+        <button className="brain-mobile-monitor" onClick={() => setRailOpen(true)} aria-label="Open agent monitor">
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: agents.some(a => a.active) ? 'var(--green)' : 'var(--text3)' }} />
+          Monitor
+        </button>
         {chatState.count > 0 && (
-          <button onClick={chatState.clear} style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text3)', fontSize: 12, cursor: 'pointer', padding: '5px 12px', borderRadius: 8 }}>Clear chat</button>
+          <button className="brain-clear-chat" onClick={chatState.clear} style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text3)', fontSize: 12, cursor: 'pointer', padding: '5px 12px', borderRadius: 8 }}>Clear chat</button>
         )}
       </div>
 
@@ -310,7 +315,14 @@ export default function BrainWorkspace() {
         <div className="brain-chat-col">
           <BrainChat variant="page" seedPrompt={seed} onStateChange={s => setChatState({ count: s.count, clear: s.clear })} />
         </div>
-        <aside className="brain-rail">{Rail}</aside>
+        {railOpen && <button className="brain-rail-backdrop" onClick={() => setRailOpen(false)} aria-label="Close agent monitor" />}
+        <aside className={`brain-rail${railOpen ? ' brain-rail-open' : ''}`}>
+          <div className="brain-rail-mobile-head">
+            <strong>Agent monitor</strong>
+            <button onClick={() => setRailOpen(false)} aria-label="Close agent monitor">✕</button>
+          </div>
+          {Rail}
+        </aside>
       </div>
     </main>
   )

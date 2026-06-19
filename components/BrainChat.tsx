@@ -362,6 +362,7 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
     const brainMsg: Message = { id: brainId, role: 'brain', content: '', streaming: true, ts: Date.now() }
     setMessages(prev => [...prev, userMsg, brainMsg])
     setInput('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     setLoading(true)
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -416,10 +417,10 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
   const railPad = isPage ? 'max(16px, calc(50% - 380px))' : '16px'
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--bg)' }}>
+    <div className="brain-chat" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--bg)' }}>
       {/* Context badges */}
       {contextMeta && (
-        <div style={{ padding: '7px 14px', borderBottom: '1px solid var(--glass-border)', display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0, background: 'var(--bg2)' }}>
+        <div className="brain-context-badges" style={{ padding: '7px 14px', borderBottom: '1px solid var(--glass-border)', display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0, background: 'var(--bg2)' }}>
           <ContextBadge icon="🟢" label={`${contextMeta.runningCount} running`} active={contextMeta.runningCount > 0} />
           <ContextBadge icon="✅" label={`${contextMeta.completedTodayCount} today`} active={contextMeta.completedTodayCount > 0} />
           <ContextBadge icon="📖" label="Wiki" active={contextMeta.hasWiki} />
@@ -429,7 +430,7 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
       )}
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: isPage ? `20px ${railPad}` : '14px 16px' }}>
+      <div className="brain-messages" style={{ flex: 1, overflowY: 'auto', padding: isPage ? `20px ${railPad}` : '14px 16px' }}>
         {messages.length === 0 && (
           <div>
             <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 14, lineHeight: 1.6 }}>
@@ -452,9 +453,9 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
       </div>
 
       {/* Input */}
-      <div style={{ padding: isPage ? `12px ${railPad} 16px` : '10px 14px 14px', borderTop: '1px solid var(--glass-border)', flexShrink: 0, background: 'var(--bg2)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Brain provider</span>
+      <div className="brain-composer" style={{ padding: isPage ? `12px ${railPad} 16px` : '10px 14px 14px', borderTop: '1px solid var(--glass-border)', flexShrink: 0, background: 'var(--bg2)' }}>
+        <div className="brain-provider-row" style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
+          <span className="brain-provider-label" style={{ fontSize: 11, color: 'var(--text3)' }}>Brain provider</span>
           <div style={{ display: 'inline-flex', padding: 2, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--glass-border)' }}>
             {(['auto', 'claude', 'codex'] as BrainProvider[]).map(option => (
               <button key={option} onClick={() => { setProvider(option); localStorage.setItem('brain-provider', option) }} disabled={loading}
@@ -464,7 +465,7 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
               </button>
             ))}
           </div>
-          {provider === 'auto' && <span style={{ fontSize: 10, color: 'var(--text3)' }}>Claude → Codex fallback</span>}
+          {provider === 'auto' && <span className="brain-fallback-hint" style={{ fontSize: 10, color: 'var(--text3)' }}>Claude → Codex fallback</span>}
         </div>
         <div style={{ position: 'relative' }}>
           {showSkillPicker && (
@@ -476,9 +477,13 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
           )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', background: 'var(--bg3)', border: `1.5px solid ${loading ? 'color-mix(in srgb, var(--accent) 50%, var(--glass-border))' : 'var(--glass-border-hi)'}`, borderRadius: 14, padding: '6px 6px 6px 10px', transition: 'border-color 0.15s' }}>
             <SkillButton onClick={openSkillPicker} />
-            <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+            <textarea ref={inputRef} value={input} onChange={e => {
+              setInput(e.target.value)
+              e.currentTarget.style.height = 'auto'
+              e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 140)}px`
+            }}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !showSkillPicker) { e.preventDefault(); send() } }}
-              placeholder="Ask, command, or describe what you need… (type / for skills)" rows={1} disabled={loading}
+              placeholder="Ask, command, or describe what you need… (type / for skills)" rows={1}
               style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', resize: 'none', color: 'var(--text)', fontSize: 'max(14px, 16px)', lineHeight: 1.55, padding: '5px 0', maxHeight: 140, overflowY: 'auto', fontFamily: 'inherit' }} />
             {loading ? (
               <button onClick={() => { abortRef.current?.abort(); setLoading(false) }} title="Stop"
@@ -491,7 +496,7 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
             )}
           </div>
         </div>
-        <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5, textAlign: 'center' }}>Enter · Shift+Enter for newline{variant === 'panel' ? ' · Esc to close' : ''}</p>
+        <p className="brain-input-hint" style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5, textAlign: 'center' }}>Enter · Shift+Enter for newline{variant === 'panel' ? ' · Esc to close' : ''}</p>
       </div>
     </div>
   )
