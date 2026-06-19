@@ -6,6 +6,7 @@ const COOKIE_NAME = 'clv_session'
 const PBKDF2_ITERATIONS = 260_000
 const LOCKOUT_BASE_SECS = 2
 const MAX_LOCKOUT_SECS = 3600
+const TOKEN_VERSION = 'v1'
 
 // ─── In-memory state (survives Next.js hot reload via module singleton) ────
 
@@ -83,15 +84,31 @@ export function clearAttempts(ip: string): void {
 // ─── Session tokens ────────────────────────────────────────────────────────
 
 export function createSession(): string {
-  const state = getState()
-  const token = crypto.randomBytes(32).toString('hex')
   const ttlDays = parseInt(process.env.SESSION_TTL_DAYS ?? '7', 10)
-  state.sessions.set(token, Date.now() + ttlDays * 86_400_000)
-  return token
+  const expiry = Date.now() + ttlDays * 86_400_000
+  const nonce = crypto.randomBytes(16).toString('base64url')
+  const payload = `${TOKEN_VERSION}.${expiry}.${nonce}`
+  return `${payload}.${signSessionPayload(payload)}`
 }
 
 export function validateSession(token: string | undefined): boolean {
   if (!token) return false
+
+  // Signed cookies survive process restarts and deployments. Keep the legacy
+  // in-memory lookup below so sessions created before this version still work
+  // until the next restart.
+  const parts = token.split('.')
+  if (parts.length === 4 && parts[0] === TOKEN_VERSION) {
+    const [version, expiryString, nonce, signature] = parts
+    const expiry = Number(expiryString)
+    if (!Number.isFinite(expiry) || Date.now() > expiry || !nonce || !signature) return false
+    const payload = `${version}.${expiryString}.${nonce}`
+    const expected = signSessionPayload(payload)
+    const actualBuffer = Buffer.from(signature)
+    const expectedBuffer = Buffer.from(expected)
+    return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+  }
+
   const state = getState()
   const expiry = state.sessions.get(token)
   if (!expiry) return false
@@ -100,6 +117,12 @@ export function validateSession(token: string | undefined): boolean {
     return false
   }
   return true
+}
+
+function signSessionPayload(payload: string): string {
+  const password = process.env.AUTH_PASSWORD ?? ''
+  if (!password) return ''
+  return crypto.createHmac('sha256', password).update(`agenttower-session:${payload}`).digest('base64url')
 }
 
 export function destroySession(token: string): void {

@@ -71,7 +71,10 @@ export default function BrainWorkspace() {
     fetch('/api/brain/skills').then(r => r.ok ? r.json() : { skills: [] }).then(d => setSkills(d.skills ?? [])).catch(() => {})
   }, [])
   const loadAgents = useCallback(() => {
-    fetch('/api/brain/agents').then(r => r.ok ? r.json() : { agents: [] }).then(d => setAgents(d.agents ?? [])).catch(() => {})
+    fetch('/api/brain/agents').then(r => {
+      if (r.status === 401) { window.location.assign('/login'); return { agents: [] } }
+      return r.ok ? r.json() : { agents: [] }
+    }).then(d => setAgents(d.agents ?? [])).catch(() => {})
   }, [])
 
   useEffect(() => {

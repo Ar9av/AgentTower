@@ -372,7 +372,13 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
         body: JSON.stringify({ messages: messages.map(m => ({ role: m.role, content: m.content })), userMessage: content, provider }),
       })
       if (!res.ok || !res.body) {
-        setMessages(prev => prev.map(m => m.id === brainId ? { ...m, content: 'Failed to get response.', streaming: false } : m)); return
+        if (res.status === 401) {
+          setMessages(prev => prev.map(m => m.id === brainId ? { ...m, content: 'Your session expired. Reconnecting…', streaming: false } : m))
+          window.location.assign('/login')
+          return
+        }
+        const detail = await res.json().catch(() => ({})) as { error?: string }
+        setMessages(prev => prev.map(m => m.id === brainId ? { ...m, content: detail.error || `Brain request failed (${res.status}).`, streaming: false } : m)); return
       }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
