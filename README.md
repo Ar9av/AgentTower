@@ -31,6 +31,14 @@ npm install && npm run dev
 
 Open **http://localhost:3000** — sign in with the password you set. That's it.
 
+## iOS client
+
+There is now a SwiftUI iPhone/iPad client in [`ios/`](./ios/README.md).
+
+- It connects to a running AgentTower server and renders the existing UI in a native shell
+- It does **not** replace the desktop/server app, because iOS cannot read `~/.claude` or `~/.codex` locally
+- Generate the Xcode project with `cd ios && xcodegen generate`
+
 ---
 
 ## What it does

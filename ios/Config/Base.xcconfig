@@ -1,0 +1,5 @@
+AGENTTOWER_SERVER_URL =
+AGENTTOWER_PASSWORD =
+
+// Optional machine-specific values. This file is intentionally gitignored.
+#include? "Private.xcconfig"

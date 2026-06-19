@@ -1,0 +1,5 @@
+// Copy this file to Private.xcconfig and fill in your own values.
+// $() prevents xcconfig from interpreting the URL's // as a comment.
+AGENTTOWER_SERVER_URL = https:/$()/agenttower.example.com
+AGENTTOWER_PASSWORD = replace-me
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
