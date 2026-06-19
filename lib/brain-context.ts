@@ -1,12 +1,14 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { getRecentSessions, getClaudeDir } from './claude-fs'
+import { discoverProjects, getRecentSessions, getClaudeDir } from './claude-fs'
+import { discoverCodexProjects, getRecentCodexSessions } from './codex-fs'
 import { scanClaudeSessions } from './process'
 import type { RecentSession } from './claude-fs'
 import type { ClaudeProcess } from './types'
 import { rankFacts, formatFactsForContext, getAllFacts } from './brain-memory'
 import { rankSkills, formatSkillsForContext } from './brain-skills'
+import { loadActiveRuns, loadOrchestratorConfig } from './orchestrator-config'
 
 // ── Session brief: read JSONL for ai-title, away_summary (recap), tools ──────
 
@@ -110,12 +112,11 @@ interface RunRecord {
   prUrl?: string
 }
 
-// Orchestrator is an optional module — gracefully skip if not deployed
 function safeLoadActiveRuns(): RunRecord[] {
-  try { return require('./orchestrator-config').loadActiveRuns() } catch { return [] }
+  try { return loadActiveRuns() } catch { return [] }
 }
 function safeLoadOrchestratorConfig(): { enabled: boolean; repos: unknown[] } {
-  try { return require('./orchestrator-config').loadOrchestratorConfig() } catch { return { enabled: false, repos: [] } }
+  try { return loadOrchestratorConfig() } catch { return { enabled: false, repos: [] } }
 }
 
 // ── Paths ────────────────────────────────────────────────────────────────────
@@ -214,6 +215,32 @@ function buildOrchestratorContext(runs: RunRecord[]): string {
     if (r.prUrl) lines.push(`  PR: ${r.prUrl}`)
   }
   return lines.join('\n')
+}
+
+function buildCodexContext(): { text: string; runningCount: number; completedTodayCount: number } {
+  const now = Date.now()
+  const sessions = getRecentCodexSessions(30)
+  const active = sessions.filter(session => session.isActive)
+  const recent = sessions.filter(session => !session.isActive && now - session.mtime < 24 * 60 * 60 * 1000).slice(0, 10)
+  if (!active.length && !recent.length) return { text: '', runningCount: 0, completedTodayCount: 0 }
+
+  const lines: string[] = []
+  if (active.length) {
+    lines.push(`### 🟢 Running Codex Agents (${active.length})`)
+    for (const session of active) {
+      lines.push(`- **${session.projectDisplayName}** · working`)
+      lines.push(`  sessionId: ${session.sessionId}`)
+      lines.push(`  Task: "${truncate(session.firstPrompt, 180)}"`)
+      lines.push(`  Path: \`${session.projectPath}\``)
+    }
+  }
+  if (recent.length) {
+    lines.push(`\n### ✅ Recent Codex Sessions (${recent.length})`)
+    for (const session of recent) {
+      lines.push(`- **${session.projectDisplayName}** — "${truncate(session.firstPrompt, 120)}" — ${relTime(session.mtime)}`)
+    }
+  }
+  return { text: lines.join('\n'), runningCount: active.length, completedTodayCount: recent.length }
 }
 
 function buildMemoryContext(userMessage?: string): string {
@@ -364,10 +391,13 @@ export function assembleBrainContext(userMessage?: string): BrainContext {
   const orchestratorConfig = safeLoadOrchestratorConfig()
 
   const now = Date.now()
-  const runningCount = sessions.filter(s => s.isActive).length
-  const completedTodayCount = sessions.filter(
+  const claudeRunningCount = sessions.filter(s => s.isActive).length
+  const claudeCompletedTodayCount = sessions.filter(
     s => !s.isActive && now - s.mtime < 24 * 60 * 60 * 1000
   ).length
+  const codexContext = buildCodexContext()
+  const runningCount = claudeRunningCount + codexContext.runningCount
+  const completedTodayCount = claudeCompletedTodayCount + codexContext.completedTodayCount
 
   const sessionSection = buildSessionContext(sessions, processes)
   const orchestratorSection = buildOrchestratorContext(activeRuns)
@@ -381,20 +411,22 @@ export function assembleBrainContext(userMessage?: string): BrainContext {
   const parts = [
     `## Live System State — ${new Date().toLocaleString()}`,
     sessionSection,
+    codexContext.text,
     orchestratorSection,
     memorySection,
     wikiSection,
   ].filter(Boolean)
 
   // List known project paths for action suggestions
-  const projectPaths = sessions
-    .filter(s => s.isActive && processes[s.sessionId]?.cwd)
-    .map(s => ({ name: s.projectDisplayName, path: processes[s.sessionId].cwd }))
+  const projectPaths = [
+    ...discoverProjects().map(project => ({ name: project.displayName, path: project.decodedPath, provider: 'claude' })),
+    ...discoverCodexProjects().map(project => ({ name: project.displayName, path: project.decodedPath, provider: 'codex' })),
+  ].filter((project, index, all) => all.findIndex(item => item.path === project.path && item.provider === project.provider) === index)
 
   if (projectPaths.length > 0) {
     parts.push('\n### Known Project Paths (for start_session actions)')
     for (const p of projectPaths) {
-      parts.push(`- ${p.name}: \`${p.path}\``)
+      parts.push(`- ${p.name} (${p.provider}): \`${p.path}\``)
     }
   }
 

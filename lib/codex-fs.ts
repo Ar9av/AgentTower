@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { loadProjectMeta } from './project-meta'
+import { getWorkspaceRoot, loadProjectMeta } from './project-meta'
 import type { ContentBlock, PaginatedSession, ParsedMessage, ProjectInfo, SessionInfo } from './types'
 
 interface CodexSessionMeta {
@@ -52,7 +52,13 @@ function getAllSessionFiles(): string[] {
 function readCodexSessionMeta(filepath: string): CodexSessionMeta | null {
   let raw: string
   try {
-    raw = fs.readFileSync(filepath, 'utf-8')
+    const stat = fs.statSync(filepath)
+    const size = Math.min(stat.size, 16 * 1024)
+    const fd = fs.openSync(filepath, 'r')
+    const buffer = Buffer.alloc(size)
+    fs.readSync(fd, buffer, 0, size, 0)
+    fs.closeSync(fd)
+    raw = buffer.toString('utf-8')
   } catch {
     return null
   }
@@ -69,6 +75,41 @@ function readCodexSessionMeta(filepath: string): CodexSessionMeta | null {
   }
 
   return null
+}
+
+export interface RecentCodexSession {
+  sessionId: string
+  filepath: string
+  projectPath: string
+  projectDisplayName: string
+  firstPrompt: string
+  mtime: number
+  isActive: boolean
+}
+
+export function getRecentCodexSessions(limit = 30): RecentCodexSession[] {
+  const index = loadSessionIndex()
+  const projectMeta = loadProjectMeta().projects
+  const sessions: RecentCodexSession[] = []
+
+  for (const filepath of getAllSessionFiles()) {
+    const meta = readCodexSessionMeta(filepath)
+    if (!meta?.cwd) continue
+    let mtime = 0
+    try { mtime = fs.statSync(filepath).mtimeMs } catch { continue }
+    const sessionId = meta.id || getCodexSessionId(filepath)
+    sessions.push({
+      sessionId,
+      filepath,
+      projectPath: meta.cwd,
+      projectDisplayName: projectMeta[meta.cwd]?.displayName || path.basename(meta.cwd) || meta.cwd,
+      firstPrompt: index.get(sessionId)?.thread_name || '(no prompt)',
+      mtime,
+      isActive: Date.now() - mtime < 30_000,
+    })
+  }
+
+  return sessions.sort((a, b) => b.mtime - a.mtime).slice(0, limit)
 }
 
 function loadSessionIndex(): Map<string, CodexIndexEntry> {
@@ -339,6 +380,44 @@ export function discoverCodexProjects(): ProjectInfo[] {
       decodedPath: cwd,
       displayName,
       sessionCount: 1,
+      latestMtime: mtime,
+      hasActive: false,
+    })
+  }
+
+  // Add workspace-only projects (created in UI but no Codex session yet)
+  const workspaceRoot = getWorkspaceRoot()
+  try {
+    const entries = fs.readdirSync(workspaceRoot, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const projectPath = path.join(workspaceRoot, entry.name)
+      if (byPath.has(projectPath)) continue
+      let mtime = 0
+      try { mtime = fs.statSync(projectPath).mtimeMs } catch {}
+      byPath.set(projectPath, {
+        source: 'codex',
+        dirName: projectPath,
+        decodedPath: projectPath,
+        displayName: meta[projectPath]?.displayName || entry.name,
+        sessionCount: 0,
+        latestMtime: mtime,
+        hasActive: false,
+      })
+    }
+  } catch {}
+
+  for (const [projectPath, projectMeta] of Object.entries(meta)) {
+    if (byPath.has(projectPath)) continue
+    if (!fs.existsSync(projectPath)) continue
+    let mtime = 0
+    try { mtime = fs.statSync(projectPath).mtimeMs } catch {}
+    byPath.set(projectPath, {
+      source: 'codex',
+      dirName: projectPath,
+      decodedPath: projectPath,
+      displayName: projectMeta.displayName || path.basename(projectPath) || projectPath,
+      sessionCount: 0,
       latestMtime: mtime,
       hasActive: false,
     })

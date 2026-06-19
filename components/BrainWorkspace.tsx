@@ -30,6 +30,17 @@ interface Skill {
   usageCount: number
 }
 
+interface Agent {
+  id: string
+  provider: 'claude' | 'codex'
+  project: string
+  task: string
+  activity: string | null
+  active: boolean
+  updatedAt: number
+  href: string
+}
+
 const LEVEL_COLOR: Record<string, string> = {
   error: 'var(--red)', warn: 'var(--yellow)', info: 'var(--accent)',
 }
@@ -43,8 +54,9 @@ export default function BrainWorkspace() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [facts, setFacts] = useState<Fact[]>([])
   const [skills, setSkills] = useState<Skill[]>([])
+  const [agents, setAgents] = useState<Agent[]>([])
   const [seed, setSeed] = useState('')
-  const [railTab, setRailTab] = useState<'alerts' | 'memory' | 'skills'>('alerts')
+  const [railTab, setRailTab] = useState<'agents' | 'alerts' | 'memory' | 'skills'>('agents')
   const [chatState, setChatState] = useState<{ count: number; clear: () => void }>({ count: 0, clear: () => {} })
   const [newSkill, setNewSkill] = useState<{ name: string; description: string; prompt: string; tags: string } | null>(null)
 
@@ -57,12 +69,16 @@ export default function BrainWorkspace() {
   const loadSkills = useCallback(() => {
     fetch('/api/brain/skills').then(r => r.ok ? r.json() : { skills: [] }).then(d => setSkills(d.skills ?? [])).catch(() => {})
   }, [])
+  const loadAgents = useCallback(() => {
+    fetch('/api/brain/agents').then(r => r.ok ? r.json() : { agents: [] }).then(d => setAgents(d.agents ?? [])).catch(() => {})
+  }, [])
 
   useEffect(() => {
-    loadAlerts(); loadFacts(); loadSkills()
-    const id = setInterval(loadAlerts, 30_000)
-    return () => clearInterval(id)
-  }, [loadAlerts, loadFacts, loadSkills])
+    loadAlerts(); loadFacts(); loadSkills(); loadAgents()
+    const alertTimer = setInterval(loadAlerts, 30_000)
+    const agentTimer = setInterval(loadAgents, 5_000)
+    return () => { clearInterval(alertTimer); clearInterval(agentTimer) }
+  }, [loadAlerts, loadFacts, loadSkills, loadAgents])
 
   function investigate(a: Alert) {
     setSeed(`Investigate this and tell me what's going on (read the session if needed): ${a.title} — ${a.detail}${a.sessionId ? ` (sessionId ${a.sessionId})` : ''}`)
@@ -78,7 +94,7 @@ export default function BrainWorkspace() {
     loadSkills()
   }
 
-  async function useSkill(skill: Skill) {
+  async function applySkill(skill: Skill) {
     await fetch('/api/brain/skills', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -108,7 +124,7 @@ export default function BrainWorkspace() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* Rail tabs */}
       <div style={{ display: 'flex', gap: 4, padding: '10px 12px', borderBottom: '1px solid var(--glass-border)', flexShrink: 0 }}>
-        {(['alerts', 'memory', 'skills'] as const).map(t => (
+        {(['agents', 'alerts', 'memory', 'skills'] as const).map(t => (
           <button key={t} onClick={() => setRailTab(t)} style={{
             flex: 1, padding: '6px 6px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer',
             border: '1px solid', textTransform: 'capitalize',
@@ -116,12 +132,36 @@ export default function BrainWorkspace() {
             color: railTab === t ? 'var(--accent)' : 'var(--text3)',
             borderColor: railTab === t ? 'color-mix(in srgb, var(--accent) 28%, transparent)' : 'var(--glass-border)',
           }}>
-            {t === 'alerts' ? `Alerts${alerts.length ? ` · ${alerts.length}` : ''}` : t === 'memory' ? `Memory${facts.length ? ` · ${facts.length}` : ''}` : `Skills${skills.length ? ` · ${skills.length}` : ''}`}
+            {t === 'agents' ? `Agents${agents.filter(a => a.active).length ? ` · ${agents.filter(a => a.active).length}` : ''}` : t === 'alerts' ? `Alerts${alerts.length ? ` · ${alerts.length}` : ''}` : t === 'memory' ? `Memory${facts.length ? ` · ${facts.length}` : ''}` : `Skills${skills.length ? ` · ${skills.length}` : ''}`}
           </button>
         ))}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
+        {railTab === 'agents' && (
+          <>
+            <div style={{ fontSize: 10, color: 'var(--text3)', margin: '0 2px 9px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Live · refreshes every 5 seconds</div>
+            {agents.length === 0 && (
+              <div style={{ padding: '28px 10px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>No agent sessions found</div>
+            )}
+            {agents.slice(0, 20).map(agent => (
+              <button key={`${agent.provider}-${agent.id}`} onClick={() => router.push(agent.href)} style={{
+                display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', marginBottom: 8, borderRadius: 10, cursor: 'pointer',
+                background: 'var(--bg3)', border: '1px solid var(--glass-border)', color: 'var(--text)',
+                borderLeft: `3px solid ${agent.active ? 'var(--green)' : 'var(--glass-border-hi)'}`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: agent.active ? 'var(--green)' : 'var(--text3)', boxShadow: agent.active ? '0 0 8px var(--green)' : 'none' }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, flex: 1 }}>{agent.project}</span>
+                  <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.05em', color: agent.provider === 'claude' ? 'var(--accent)' : 'var(--purple)' }}>{agent.provider}</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.task || 'No task description'}</div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>{agent.active ? agent.activity || 'working' : `updated ${new Date(agent.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}</div>
+              </button>
+            ))}
+          </>
+        )}
+
         {railTab === 'alerts' && (
           <>
             {alerts.length === 0 && (
@@ -235,7 +275,7 @@ export default function BrainWorkspace() {
                   ))}
                   <span style={{ flex: 1 }} />
                   {s.usageCount > 0 && <span style={{ fontSize: 10, color: 'var(--text3)' }}>used {s.usageCount}×</span>}
-                  <button onClick={() => useSkill(s)} style={{
+                  <button onClick={() => applySkill(s)} style={{
                     fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 6, cursor: 'pointer',
                     background: 'var(--accent-dim)', color: 'var(--accent)',
                     border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',

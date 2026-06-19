@@ -5,9 +5,6 @@ import Link from 'next/link'
 import { useTheme } from './ThemeProvider'
 import { useSidebar } from './SidebarProvider'
 import Notifications from './Notifications'
-import dynamic from 'next/dynamic'
-
-const BrainPanel = dynamic(() => import('./BrainPanel'), { ssr: false })
 
 // ── Inline SVG icons ────────────────────────────────────────────────────────
 function IconBarChart() {
@@ -197,7 +194,6 @@ export default function Nav() {
   const { toggle: toggleSidebar } = useSidebar()
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
-  const [brainOpen, setBrainOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -327,17 +323,18 @@ export default function Nav() {
           </button>
 
           {/* Brain button — desktop only (mobile uses the center tab) */}
-          <button
-            onClick={() => setBrainOpen(v => !v)}
+          <Link
+            href="/brain"
             className="glass-btn hide-mobile"
             title="AgentTower Brain — AI assistant"
-            aria-label="Open Brain"
+            aria-label="Open Brain page"
             style={{
               padding: '6px 10px', minHeight: 34,
               display: 'flex', alignItems: 'center', gap: 5,
-              color: brainOpen ? 'var(--accent)' : undefined,
-              background: brainOpen ? 'var(--accent-dim)' : undefined,
-              borderColor: brainOpen ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : undefined,
+              color: is('/brain') ? 'var(--accent)' : undefined,
+              background: is('/brain') ? 'var(--accent-dim)' : undefined,
+              borderColor: is('/brain') ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : undefined,
+              textDecoration: 'none',
             }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -345,7 +342,7 @@ export default function Nav() {
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
             </svg>
             <span style={{ fontSize: 13, fontWeight: 600 }}>Brain</span>
-          </button>
+          </Link>
 
           <Notifications />
 
@@ -406,19 +403,16 @@ export default function Nav() {
         </div>
       )}
 
-      {/* Brain panel */}
-      {brainOpen && <BrainPanel onClose={() => setBrainOpen(false)} />}
-
       {/* Mobile bottom tab bar — Brain is the prominent center action */}
       <nav className="mobile-tab-bar show-mobile" aria-label="Main navigation">
         <MobileTab href="/projects" icon={<IconProjects />} label="Projects" active={is('/projects') || pathname === '/'} />
         <MobileTab href="/tower" icon={<IconTower />} label="Tower" active={is('/tower')} />
 
         {/* Center Brain button — elevated */}
-        <button
-          onClick={() => setBrainOpen(v => !v)}
-          className={`mobile-tab-brain${brainOpen ? ' mobile-tab-brain-active' : ''}`}
-          aria-label="Open Brain"
+        <Link
+          href="/brain"
+          className={`mobile-tab-brain${is('/brain') ? ' mobile-tab-brain-active' : ''}`}
+          aria-label="Open Brain page"
         >
           <span className="mobile-tab-brain-orb">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -427,7 +421,7 @@ export default function Nav() {
             </svg>
           </span>
           <span className="mobile-tab-label">Brain</span>
-        </button>
+        </Link>
 
         <MobileTab href="/bookmarks" icon={<IconBookmark />} label="Saved" active={is('/bookmarks')} />
         <MobileTab href="/analytics" icon={<IconBarChart />} label="Analytics" active={is('/analytics')} />

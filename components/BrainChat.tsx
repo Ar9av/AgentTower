@@ -88,7 +88,10 @@ interface Message {
   streaming?: boolean
   actions?: ParsedAction[]
   ts: number
+  provider?: 'claude' | 'codex'
 }
+
+type BrainProvider = 'auto' | 'claude' | 'codex'
 
 interface ParsedAction {
   type: 'start_session' | 'open_session' | 'kill_session' | 'save_memory' | 'update_wiki' | 'search_wiki' | 'send_to_session'
@@ -102,6 +105,7 @@ interface ContextMeta {
   hasWiki: boolean
   hasMemory: boolean
   hasOrchestrator: boolean
+  requestedProvider?: BrainProvider
 }
 
 // ── Persistence ───────────────────────────────────────────────────────────────
@@ -162,13 +166,13 @@ function useActionExecutor(onResult: (msg: string) => void) {
       }
       if (action.type === 'start_session' && p.project) {
         const res = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_path: p.project, prompt: p.prompt ?? 'hello', model: p.model ?? 'sonnet' }) })
+          body: JSON.stringify({ project_path: p.project, prompt: p.prompt ?? 'hello', model: p.model ?? 'sonnet', mode: p.provider ?? 'auto' }) })
         if (res.ok) onResult(`Started session in ${String(p.project).split('/').pop()}`)
         return res.ok ? 'done' : 'error'
       }
       if (action.type === 'send_to_session' && p.sessionId && p.message) {
         const res = await fetch('/api/input', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: p.sessionId, prompt: p.message }) })
+          body: JSON.stringify({ session_id: p.sessionId, prompt: p.message, mode: p.provider }) })
         if (res.ok) onResult(`Sent to ${p.label ?? 'agent'}: "${String(p.message).slice(0, 60)}"`)
         return res.ok ? 'done' : 'error'
       }
@@ -269,6 +273,7 @@ function MessageBubble({ msg, execute }: { msg: Message; execute: (a: ParsedActi
           </div>
         )}
         <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 3, textAlign: isUser ? 'right' : 'left' }}>
+          {!isUser && msg.provider ? `${msg.provider === 'claude' ? 'Claude' : 'Codex'} · ` : ''}
           {new Date(msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
@@ -299,6 +304,7 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [contextMeta, setContextMeta] = useState<ContextMeta | null>(null)
+  const [provider, setProvider] = useState<BrainProvider>('auto')
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -323,6 +329,10 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
   useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80) }, [])
+  useEffect(() => {
+    const saved = localStorage.getItem('brain-provider')
+    if (saved === 'claude' || saved === 'codex') setProvider(saved)
+  }, [])
   useEffect(() => { if (messages.length > 0) saveHistory(messages) }, [messages])
 
   const clearHistory = useCallback(() => {
@@ -358,7 +368,7 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
     try {
       const res = await fetch('/api/brain/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
-        body: JSON.stringify({ messages: messages.map(m => ({ role: m.role, content: m.content })), userMessage: content }),
+        body: JSON.stringify({ messages: messages.map(m => ({ role: m.role, content: m.content })), userMessage: content, provider }),
       })
       if (!res.ok || !res.body) {
         setMessages(prev => prev.map(m => m.id === brainId ? { ...m, content: 'Failed to get response.', streaming: false } : m)); return
@@ -366,21 +376,32 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let full = ''
-      let metaParsed = false
+      let pending = ''
+      const handleControl = (raw: string) => {
+        try {
+          const data = JSON.parse(raw) as ContextMeta & { _meta?: boolean; _event?: string; provider?: 'claude' | 'codex' }
+          if (data._meta) setContextMeta(data)
+          if (data._event === 'provider' && data.provider) {
+            setMessages(prev => prev.map(m => m.id === brainId ? { ...m, provider: data.provider } : m))
+          }
+        } catch { /* ignore malformed control data */ }
+      }
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        let chunk = decoder.decode(value, { stream: true })
-        if (!metaParsed && chunk.startsWith('\x00')) {
-          const end = chunk.indexOf('\x00', 1)
-          if (end > 0) {
-            try { const meta = JSON.parse(chunk.slice(1, end)) as ContextMeta & { _meta?: boolean }; if (meta._meta) { setContextMeta(meta); metaParsed = true } } catch { /* ignore */ }
-            chunk = chunk.slice(end + 1)
-          }
+        pending += decoder.decode(value, { stream: true })
+        while (pending) {
+          const start = pending.indexOf('\x00')
+          if (start < 0) { full += pending; pending = ''; break }
+          if (start > 0) { full += pending.slice(0, start); pending = pending.slice(start); continue }
+          const end = pending.indexOf('\x00', 1)
+          if (end < 0) break
+          handleControl(pending.slice(1, end))
+          pending = pending.slice(end + 1)
         }
-        full += chunk
         setMessages(prev => prev.map(m => m.id === brainId ? { ...m, content: full } : m))
       }
+      full += pending
       const actions = parseActions(full)
       const clean = stripActions(full)
       setMessages(prev => { const next = prev.map(m => m.id === brainId ? { ...m, content: clean, streaming: false, actions } : m); saveHistory(next); return next })
@@ -432,6 +453,19 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
 
       {/* Input */}
       <div style={{ padding: isPage ? `12px ${railPad} 16px` : '10px 14px 14px', borderTop: '1px solid var(--glass-border)', flexShrink: 0, background: 'var(--bg2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Brain provider</span>
+          <div style={{ display: 'inline-flex', padding: 2, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--glass-border)' }}>
+            {(['auto', 'claude', 'codex'] as BrainProvider[]).map(option => (
+              <button key={option} onClick={() => { setProvider(option); localStorage.setItem('brain-provider', option) }} disabled={loading}
+                title={option === 'auto' ? 'Use Claude, then switch to Codex on usage or rate limits' : `Always use ${option}`}
+                style={{ border: 0, borderRadius: 6, padding: '4px 9px', cursor: loading ? 'default' : 'pointer', fontSize: 11, fontWeight: 600, textTransform: 'capitalize', background: provider === option ? 'var(--accent-dim)' : 'transparent', color: provider === option ? 'var(--accent)' : 'var(--text3)' }}>
+                {option}
+              </button>
+            ))}
+          </div>
+          {provider === 'auto' && <span style={{ fontSize: 10, color: 'var(--text3)' }}>Claude → Codex fallback</span>}
+        </div>
         <div style={{ position: 'relative' }}>
           {showSkillPicker && (
             <SkillPicker

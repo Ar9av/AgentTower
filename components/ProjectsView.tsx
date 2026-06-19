@@ -84,6 +84,10 @@ export default function ProjectsView({ initialProjects, initialMode }: Props) {
     setShowAdd(false)
     router.refresh()
     // Navigate to the newly created project so user can start a chat
+    if (mode === 'codex') {
+      router.push(`/project?mode=codex&p=${b64url(data.path)}`)
+      return
+    }
     const dirName = data.path.replace(/\./g, '--').replace(/\//g, '-')
     router.push(`/project?p=${b64url(dirName)}`)
   }
@@ -113,15 +117,13 @@ export default function ProjectsView({ initialProjects, initialMode }: Props) {
             <ModeButton label="Claude" active={mode === 'claude'} onClick={() => switchMode('claude')} />
             <ModeButton label="Codex" active={mode === 'codex'} onClick={() => switchMode('codex')} />
           </div>
-          {mode === 'claude' && (
-            <button
-              className="glass-btn-prominent"
-              onClick={() => setShowAdd(true)}
-              style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, minHeight: 40, width: 'auto' }}
-            >
-              + Add Project
-            </button>
-          )}
+          <button
+            className="glass-btn-prominent"
+            onClick={() => setShowAdd(true)}
+            style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, minHeight: 40, width: 'auto' }}
+          >
+            + {mode === 'codex' ? 'Add Workspace' : 'Add Project'}
+          </button>
         </div>
       </div>
 
@@ -158,15 +160,13 @@ export default function ProjectsView({ initialProjects, initialMode }: Props) {
               ? 'Clone a repo or create a new workspace to get started.'
               : 'Run a Codex session in a workspace and it will appear here.'}
           </p>
-          {mode === 'claude' && (
-            <button
-              className="glass-btn-prominent"
-              onClick={() => setShowAdd(true)}
-              style={{ display: 'inline-flex', width: 'auto', padding: '10px 24px', fontSize: 13, fontWeight: 600 }}
-            >
-              + Add Project
-            </button>
-          )}
+          <button
+            className="glass-btn-prominent"
+            onClick={() => setShowAdd(true)}
+            style={{ display: 'inline-flex', width: 'auto', padding: '10px 24px', fontSize: 13, fontWeight: 600 }}
+          >
+            + {mode === 'codex' ? 'Add Workspace' : 'Add Project'}
+          </button>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: 12 }}>
@@ -184,7 +184,7 @@ export default function ProjectsView({ initialProjects, initialMode }: Props) {
         </div>
       )}
 
-      {showAdd && <AddProjectModal onClose={() => setShowAdd(false)} onCreate={handleCreate} />}
+      {showAdd && <AddProjectModal onClose={() => setShowAdd(false)} onCreate={handleCreate} mode={mode} />}
       {tailing && (
         <LiveTailDrawer
           projectDirName={tailing.dirName}
@@ -344,10 +344,11 @@ function ModeButton({ label, active, onClick }: { label: string; active: boolean
 }
 
 function AddProjectModal({
-  onClose, onCreate,
+  onClose, onCreate, mode,
 }: {
   onClose: () => void
   onCreate: (p: { name: string; githubUrl: string; displayName: string }) => Promise<void>
+  mode: AgentMode
 }) {
   const [githubUrl, setGithubUrl] = useState('')
   const [name, setName] = useState('')
@@ -386,9 +387,13 @@ function AddProjectModal({
         onClick={e => e.stopPropagation()}
         style={{ borderRadius: 16, padding: 24, maxWidth: 460, width: '100%' }}
       >
-        <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700 }}>Add Project</h2>
+        <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700 }}>
+          {mode === 'codex' ? 'Add Codex Workspace' : 'Add Project'}
+        </h2>
         <p style={{ margin: '0 0 18px', fontSize: 12, color: 'var(--text3)' }}>
-          Provide a GitHub URL to clone, or just a folder name to start fresh.
+          {mode === 'codex'
+            ? 'Provide a GitHub URL to clone, or just a folder name to create a workspace for Codex.'
+            : 'Provide a GitHub URL to clone, or just a folder name to start fresh.'}
         </p>
         <form onSubmit={submit} style={{ display: 'grid', gap: 12 }}>
           <Field label="GitHub URL (optional)" hint="https://github.com/user/repo or git@github.com:user/repo.git">

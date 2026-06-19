@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
 import { assembleBrainContext, getVaultPath } from '@/lib/brain-context'
 import { getClaudeBin } from '@/lib/spawn-claude'
+import { getCodexBin } from '@/lib/spawn-codex'
 import { spawn } from 'child_process'
 import os from 'os'
 import path from 'path'
 
 interface Message { role: 'user' | 'brain'; content: string }
+type BrainProvider = 'auto' | 'claude' | 'codex'
 
 const CLAUDE_PROJECTS = path.join(os.homedir(), '.claude', 'projects')
 
@@ -46,11 +48,11 @@ Keep investigation focused (a few targeted reads/greps). Then give a grounded an
 Emit actions on their own line. The UI renders them as buttons the user clicks to confirm.
 
 \`\`\`
-# Start a new Claude Code session
-ACTION:start_session:{"project":"<absolute_path>","prompt":"<task>","model":"sonnet"}
+# Start a new Claude Code or Codex session
+ACTION:start_session:{"project":"<absolute_path>","prompt":"<task>","provider":"auto|claude|codex","model":"sonnet"}
 
 # Send a message INTO a running session (steer a live agent)
-ACTION:send_to_session:{"sessionId":"<id>","message":"<instruction>","label":"<project>"}
+ACTION:send_to_session:{"sessionId":"<id>","message":"<instruction>","label":"<project>","provider":"claude|codex"}
 
 # Open an existing session in the UI
 ACTION:open_session:{"encodedFilepath":"<encoded>","label":"<short label>"}
@@ -71,6 +73,7 @@ ACTION:search_wiki:{"query":"<terms>"}
 Rules:
 - Only suggest actions you can justify from real data
 - start_session / send_to_session: use the exact paths and sessionIds in the context
+- For delegation, provider "auto" tries Claude first and switches to Codex if Claude is rate/usage limited. Honor an explicit user provider choice.
 - save_memory: short factual statements; pick the most fitting type
 - Never fabricate sessionIds, pids, or paths — read them or use the context
 
@@ -85,14 +88,16 @@ export async function POST(req: NextRequest) {
   if (authErr) return authErr
 
   const body = await req.json().catch(() => ({}))
-  const { messages, userMessage } = body as {
+  const { messages, userMessage, provider = 'auto' } = body as {
     messages: Message[]
     userMessage: string
+    provider?: BrainProvider
   }
 
   if (!userMessage?.trim()) {
     return NextResponse.json({ error: 'userMessage required' }, { status: 400 })
   }
+  const selectedProvider: BrainProvider = ['auto', 'claude', 'codex'].includes(provider) ? provider : 'auto'
 
   // Assemble the full unified context
   const ctx = assembleBrainContext(userMessage)
@@ -105,6 +110,7 @@ export async function POST(req: NextRequest) {
 
   const prompt = [
     buildSystemPrompt(),
+    `\nBrain/delegation provider preference: ${selectedProvider}.`,
     '',
     ctx.text,
     historyBlock ? `\n## Conversation History\n${historyBlock}` : '',
@@ -125,11 +131,49 @@ export async function POST(req: NextRequest) {
 
   const stream = new ReadableStream({
     start(controller) {
+      let closed = false
+      let fallbackStarted = false
+      const write = (value: string) => {
+        if (!closed) controller.enqueue(encoder.encode(value))
+      }
+      const control = (value: Record<string, unknown>) => write(`\x00${JSON.stringify(value)}\x00`)
+      const close = () => {
+        if (closed) return
+        closed = true
+        try { controller.close() } catch { /* ignore */ }
+      }
+
       // First chunk: metadata for the UI
-      controller.enqueue(encoder.encode(`\x00${meta}\x00`))
+      control({ ...JSON.parse(meta), requestedProvider: selectedProvider })
+
+      const runCodex = (fallbackReason?: string) => {
+        if (closed || fallbackStarted) return
+        fallbackStarted = true
+        if (fallbackReason) write(`\n\n> Claude is unavailable (${fallbackReason}). Switched to Codex automatically.\n\n`)
+        control({ _event: 'provider', provider: 'codex' })
+        const proc = spawn(
+          getCodexBin(),
+          ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '-C', os.homedir(), prompt],
+          { stdio: ['ignore', 'pipe', 'pipe'], cwd: os.homedir() }
+        )
+        let stderr = ''
+        proc.stdout?.on('data', (chunk: Buffer) => write(chunk.toString()))
+        proc.stderr?.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-4000) })
+        proc.on('close', (code) => {
+          if (code && stderr.trim()) write(`\n\nCodex error: ${stderr.trim().slice(-1000)}`)
+          close()
+        })
+        proc.on('error', (err: Error) => { write(`\nError starting Codex: ${err.message}`); close() })
+      }
+
+      if (selectedProvider === 'codex') {
+        runCodex()
+        return
+      }
 
       // Run with read-only investigative tools enabled. cwd = home so it can
       // reach ~/.claude/projects and ~/Knowledge. Restrict to safe tools.
+      control({ _event: 'provider', provider: 'claude' })
       const proc = spawn(
         getClaudeBin(),
         [
@@ -140,14 +184,25 @@ export async function POST(req: NextRequest) {
         { stdio: ['ignore', 'pipe', 'pipe'], cwd: os.homedir() }
       )
 
+      let stderr = ''
+      let wroteOutput = false
       proc.stdout?.on('data', (chunk: Buffer) => {
-        controller.enqueue(encoder.encode(chunk.toString()))
+        wroteOutput = true
+        write(chunk.toString())
       })
-      proc.stderr?.on('data', () => { /* suppress */ })
-      proc.on('close', () => { try { controller.close() } catch { /* ignore */ } })
+      proc.stderr?.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-8000) })
+      proc.on('close', (code) => {
+        const isLimit = /rate.?limit|usage.?limit|credit balance|quota|overloaded|capacity|too many requests|429/i.test(stderr)
+        if (selectedProvider === 'auto' && (isLimit || (code && !wroteOutput))) {
+          runCodex(isLimit ? 'usage or rate limit reached' : 'Claude exited before responding')
+          return
+        }
+        if (code && stderr.trim()) write(`\n\nClaude error: ${stderr.trim().slice(-1000)}`)
+        close()
+      })
       proc.on('error', (err: Error) => {
-        controller.enqueue(encoder.encode(`\nError: ${err.message}`))
-        try { controller.close() } catch { /* ignore */ }
+        if (selectedProvider === 'auto') runCodex('Claude could not be started')
+        else { write(`\nError starting Claude: ${err.message}`); close() }
       })
     },
   })

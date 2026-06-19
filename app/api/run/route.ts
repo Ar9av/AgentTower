@@ -65,6 +65,26 @@ export async function POST(req: NextRequest) {
     if (!isGitRepo(cwd)) args.push('--skip-git-repo-check')
     args.push(prompt)
     proc = spawnCodex(args, { cwd, detached: true, stdio: 'ignore' })
+  } else if (mode === 'auto') {
+    const args: string[] = []
+    if (skip_permissions !== false) args.push('--dangerously-skip-permissions')
+    if (typeof model === 'string' && model.trim()) args.push('--model', model.trim())
+    args.push('-p', prompt)
+    proc = spawnClaude(args, { cwd, detached: true, stdio: ['ignore', 'ignore', 'pipe'] })
+
+    // A delegated task normally stays on Claude. If Claude rejects it before
+    // doing work because the account is limited, transparently retry in Codex.
+    let stderr = ''
+    proc.stderr?.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-8000) })
+    proc.on('close', code => {
+      const limited = /rate.?limit|usage.?limit|credit balance|quota|overloaded|capacity|too many requests|429/i.test(stderr)
+      if (!code || !limited) return
+      const codexArgs = ['exec', '--dangerously-bypass-approvals-and-sandbox']
+      if (!isGitRepo(cwd)) codexArgs.push('--skip-git-repo-check')
+      codexArgs.push(prompt)
+      const fallback = spawnCodex(codexArgs, { cwd, detached: true, stdio: 'ignore' })
+      fallback.unref()
+    })
   } else {
     const args: string[] = []
     if (skip_permissions !== false) args.push('--dangerously-skip-permissions')
@@ -74,5 +94,5 @@ export async function POST(req: NextRequest) {
   }
   proc.unref()
 
-  return NextResponse.json({ ok: true, pid: proc.pid, worktreePath, worktreeBranch })
+  return NextResponse.json({ ok: true, pid: proc.pid, provider: mode === 'codex' ? 'codex' : mode === 'auto' ? 'auto' : 'claude', worktreePath, worktreeBranch })
 }
