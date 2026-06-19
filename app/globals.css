@@ -588,8 +588,8 @@ main { animation: fadeIn 0.18s ease; }
 
 /* Add bottom padding on mobile so content isn't hidden behind the tab bar */
 @media (max-width: 640px) {
-  body > * > main,
-  body > main {
+  body > * > main:not(.brain-workspace),
+  body > main:not(.brain-workspace) {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
@@ -597,11 +597,7 @@ main { animation: fadeIn 0.18s ease; }
   .chat-input-wrap {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 8px) !important;
   }
-  /* Brain workspace height already subtracts 56px+safe-area — don't double-count */
-  .brain-workspace .chat-input-wrap,
-  .brain-chat-col > div:last-child {
-    padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)) !important;
-  }
+  /* Brain workspace reserves the tab bar in its own height calculation. */
 }
 
 /* ══════════════════════════════════════════════════════════════════
