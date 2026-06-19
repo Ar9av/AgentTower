@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
-import { searchSessions } from '@/lib/claude-fs'
+import { searchAllConversations, type ConversationSearchProvider } from '@/lib/conversation-search'
 
 export async function GET(req: NextRequest) {
   const authErr = await requireAuth(req)
@@ -11,6 +11,9 @@ export async function GET(req: NextRequest) {
 
   const project = req.nextUrl.searchParams.get('project') ?? undefined
   const regex = req.nextUrl.searchParams.get('regex') === '1'
+  const providerParam = req.nextUrl.searchParams.get('provider')
+  const provider: ConversationSearchProvider =
+    providerParam === 'claude' || providerParam === 'codex' ? providerParam : 'all'
 
-  return NextResponse.json(searchSessions(q, { projectDirName: project, regex }))
+  return NextResponse.json(searchAllConversations(q, { project, regex, provider }))
 }

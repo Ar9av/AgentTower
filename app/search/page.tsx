@@ -6,6 +6,14 @@ import Nav from '@/components/Nav'
 import { SearchResult, ProjectInfo } from '@/lib/types'
 import { Suspense } from 'react'
 
+type SearchProvider = 'all' | 'claude' | 'codex'
+
+interface SearchProjectOption {
+  value: string
+  label: string
+  provider: Exclude<SearchProvider, 'all'>
+}
+
 function parseKeywords(query: string): string[] {
   const keywords: string[] = []
   const re = /"([^"]+)"|(\S+)/g
@@ -125,19 +133,15 @@ function renderInline(text: string): React.ReactNode {
   return <>{parts}</>
 }
 
-function encodeFilepath(filepath: string): string {
-  return btoa(unescape(encodeURIComponent(filepath)))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
-}
-
 function SearchInner() {
   const params = useSearchParams()
   const initialQ = params.get('q') ?? ''
   const [query, setQuery] = useState(initialQ)
   const [regexMode, setRegexMode] = useState(false)
   const [regexError, setRegexError] = useState('')
+  const [provider, setProvider] = useState<SearchProvider>('all')
   const [filterProject, setFilterProject] = useState('')
-  const [projects, setProjects] = useState<ProjectInfo[]>([])
+  const [projects, setProjects] = useState<SearchProjectOption[]>([])
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'hits'>('newest')
@@ -152,8 +156,24 @@ function SearchInner() {
 
   // Fetch project list once
   useEffect(() => {
-    fetch('/api/projects').then(r => r.json()).then((data: ProjectInfo[]) => {
-      setProjects(data.sort((a, b) => a.displayName.localeCompare(b.displayName)))
+    Promise.all([
+      fetch('/api/projects?mode=claude').then(r => r.json() as Promise<ProjectInfo[]>),
+      fetch('/api/projects?mode=codex').then(r => r.json() as Promise<ProjectInfo[]>),
+    ]).then(([claudeProjects, codexProjects]) => {
+      const options: SearchProjectOption[] = [
+        ...claudeProjects.map(project => ({
+          value: `claude:${project.dirName}`,
+          label: `${project.displayName} · Claude`,
+          provider: 'claude' as const,
+        })),
+        ...codexProjects.map(project => ({
+          value: `codex:${project.decodedPath}`,
+          label: `${project.displayName} · Codex`,
+          provider: 'codex' as const,
+        })),
+      ]
+      options.sort((a, b) => a.label.localeCompare(b.label))
+      setProjects(options)
     }).catch(() => {})
   }, [])
 
@@ -164,14 +184,17 @@ function SearchInner() {
     catch (e) { setRegexError((e as Error).message) }
   }, [query, regexMode])
 
-  const doSearch = useCallback(async (q: string, project: string, regex: boolean) => {
+  const doSearch = useCallback(async (q: string, project: string, regex: boolean, selectedProvider: SearchProvider) => {
     if (q.trim().length < 2) { setResults([]); return }
     if (regex) {
       try { new RegExp(q) } catch { setResults([]); return }
     }
     setLoading(true)
     try {
-      const url = `/api/search?q=${encodeURIComponent(q)}${project ? `&project=${encodeURIComponent(project)}` : ''}${regex ? '&regex=1' : ''}`
+      const projectProvider = project ? project.split(':', 1)[0] as SearchProvider : 'all'
+      const projectValue = project.includes(':') ? project.slice(project.indexOf(':') + 1) : project
+      const effectiveProvider = project ? projectProvider : selectedProvider
+      const url = `/api/search?q=${encodeURIComponent(q)}${project ? `&project=${encodeURIComponent(projectValue)}` : ''}${regex ? '&regex=1' : ''}${effectiveProvider !== 'all' ? `&provider=${effectiveProvider}` : ''}`
       const res = await fetch(url)
       if (res.ok) setResults(await res.json())
     } finally {
@@ -180,13 +203,18 @@ function SearchInner() {
   }, [])
 
   useEffect(() => {
-    const id = setTimeout(() => doSearch(query, filterProject, regexMode), 300)
+    const id = setTimeout(() => doSearch(query, filterProject, regexMode, provider), 300)
     return () => clearTimeout(id)
-  }, [query, filterProject, regexMode, doSearch])
+  }, [query, filterProject, regexMode, provider, doSearch])
 
   useEffect(() => {
-    if (initialQ) doSearch(initialQ, '', false)
+    if (initialQ) doSearch(initialQ, '', false, 'all')
   }, [initialQ, doSearch])
+
+  useEffect(() => {
+    if (!filterProject || provider === 'all') return
+    if (!filterProject.startsWith(`${provider}:`)) setFilterProject('')
+  }, [provider, filterProject])
 
   // Close AI panel when query changes
   useEffect(() => {
@@ -194,7 +222,7 @@ function SearchInner() {
     setAiText('')
     setAiError('')
     aiAbortRef.current?.abort()
-  }, [query, filterProject])
+  }, [query, filterProject, provider])
 
   // Auto-scroll AI panel while streaming
   useEffect(() => {
@@ -249,7 +277,8 @@ function SearchInner() {
   }, [query, results, aiLoading])
 
   const bySession = results.reduce<Record<string, SearchResult[]>>((acc, r) => {
-    ;(acc[r.sessionId] = acc[r.sessionId] ?? []).push(r)
+    const key = `${r.provider}:${r.sessionId}`
+    ;(acc[key] = acc[key] ?? []).push(r)
     return acc
   }, {})
 
@@ -321,6 +350,24 @@ function SearchInner() {
 
         {/* Filters + sort row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          <select
+            value={provider}
+            onChange={e => setProvider(e.target.value as SearchProvider)}
+            style={{
+              background: 'var(--bg2)',
+              border: '1px solid var(--border)',
+              borderRadius: 4,
+              color: 'var(--text)',
+              padding: '3px 8px',
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
+          >
+            <option value="all">All providers</option>
+            <option value="claude">Claude</option>
+            <option value="codex">Codex</option>
+          </select>
+
           {/* Project filter */}
           <select
             value={filterProject}
@@ -336,9 +383,11 @@ function SearchInner() {
             }}
           >
             <option value="">All projects</option>
-            {projects.map(p => (
-              <option key={p.dirName} value={p.dirName}>{p.displayName}</option>
-            ))}
+            {projects
+              .filter(project => provider === 'all' || project.provider === provider)
+              .map(project => (
+                <option key={project.value} value={project.value}>{project.label}</option>
+              ))}
           </select>
 
           {/* Regex toggle */}
@@ -471,24 +520,30 @@ function SearchInner() {
         `}</style>
 
         {/* Results */}
-        {sortedSessions.map(([sessionId, hits]) => {
+        {sortedSessions.map(([sessionKey, hits]) => {
           const first = hits[0]
+          const sessionHref = first.provider === 'codex'
+            ? `/session?mode=codex&f=${first.encodedFilepath}`
+            : `/session?f=${first.encodedFilepath}`
           return (
-            <div key={sessionId} style={{ marginBottom: 24 }}>
+            <div key={sessionKey} style={{ marginBottom: 24 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
                 <Link
-                  href={`/session?f=${encodeFilepath(first.filepath)}`}
+                  href={sessionHref}
                   style={{ fontWeight: 600, fontSize: 14, color: 'var(--accent)', textDecoration: 'none' }}
                 >
-                  {first.decodedProjectPath.split('/').pop()} / {sessionId.slice(0, 8)}
+                  {first.decodedProjectPath.split('/').pop()} / {first.sessionId.slice(0, 8)}
                 </Link>
+                <span style={{ fontSize: 11, color: first.provider === 'codex' ? 'var(--yellow)' : 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {first.provider}
+                </span>
                 <span style={{ fontSize: 12, color: 'var(--text2)' }}>{first.decodedProjectPath}</span>
                 <span style={{ fontSize: 11, color: 'var(--text2)', marginLeft: 'auto' }}>{fmtDate(first.mtime)}</span>
               </div>
               {hits.map((r, i) => (
                 <Link
                   key={i}
-                  href={`/session?f=${encodeFilepath(r.filepath)}${r.msgUuid ? `&msg=${r.msgUuid}` : ''}`}
+                  href={`${r.provider === 'codex' ? '/session?mode=codex' : '/session?'}${r.provider === 'codex' ? '&' : ''}f=${r.encodedFilepath}${r.msgUuid ? `&msg=${r.msgUuid}` : ''}`}
                   style={{ textDecoration: 'none' }}
                 >
                   <div style={{
@@ -513,7 +568,7 @@ function SearchInner() {
         {query.length >= 2 && !loading && results.length === 0 && !regexError && (
           <div style={{ textAlign: 'center', color: 'var(--text2)', marginTop: 60 }}>
             No results found for &ldquo;{query}&rdquo;
-            {filterProject ? ` in ${projects.find(p => p.dirName === filterProject)?.displayName ?? filterProject}` : ''}
+            {filterProject ? ` in ${projects.find(project => project.value === filterProject)?.label ?? filterProject}` : ''}
             {!regexMode && parseKeywords(query).length > 1 && (
               <div style={{ fontSize: 12, marginTop: 8 }}>
                 Tip: all {parseKeywords(query).length} terms must appear on the same message line. Try fewer keywords.

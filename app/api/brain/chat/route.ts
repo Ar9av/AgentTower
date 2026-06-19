@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
 import { assembleBrainContext, getVaultPath } from '@/lib/brain-context'
+import { searchAllConversations } from '@/lib/conversation-search'
 import { getClaudeBin } from '@/lib/spawn-claude'
 import { getCodexBin } from '@/lib/spawn-codex'
+import type { SearchResult } from '@/lib/types'
 import { spawn } from 'child_process'
 import os from 'os'
 import path from 'path'
@@ -55,7 +57,7 @@ ACTION:start_session:{"project":"<absolute_path>","prompt":"<task>","provider":"
 ACTION:send_to_session:{"sessionId":"<id>","message":"<instruction>","label":"<project>","provider":"claude|codex"}
 
 # Open an existing session in the UI
-ACTION:open_session:{"encodedFilepath":"<encoded>","label":"<short label>"}
+ACTION:open_session:{"encodedFilepath":"<encoded>","label":"<short label>","provider":"claude|codex"}
 
 # Kill a stuck or unwanted process
 ACTION:kill_session:{"pid":<number>,"label":"<project name>"}
@@ -83,6 +85,66 @@ When the user shares something durable (a goal, decision, preference, or recurri
 emit ACTION:save_memory with the right type. This is how you get smarter over time.`
 }
 
+function extractConversationSearchQuery(userMessage: string): string | null {
+  const text = userMessage.trim()
+  const slash = text.match(/^\/search(?:\s+(.+))?$/i)
+  if (slash) return slash[1]?.trim() || null
+
+  const natural = text.match(/(?:search|find)\s+(?:through\s+)?(?:my\s+)?(?:convos|conversations|chats|sessions|transcripts)(?:\s+(?:for|about))?\s+(.+)/i)
+  if (natural) return natural[1].trim()
+
+  return null
+}
+
+function formatConversationSearchResults(query: string, results: SearchResult[]): string {
+  if (results.length === 0) {
+    return [
+      '## Conversation Search Results',
+      `Query: "${query}"`,
+      'No matching Claude or Codex conversation snippets were found.',
+    ].join('\n')
+  }
+
+  const grouped = new Map<string, SearchResult[]>()
+  for (const result of results) {
+    const key = `${result.provider}:${result.sessionId}`
+    const arr = grouped.get(key) ?? []
+    arr.push(result)
+    grouped.set(key, arr)
+  }
+
+  const blocks = [...grouped.values()].slice(0, 8).map(hits => {
+    const first = hits[0]
+    const sessionHref = first.provider === 'codex'
+      ? `/session?mode=codex&f=${first.encodedFilepath}`
+      : `/session?f=${first.encodedFilepath}`
+    const label = path.basename(first.decodedProjectPath) || first.sessionId
+    const openAction = JSON.stringify({
+      encodedFilepath: first.encodedFilepath,
+      label,
+      provider: first.provider,
+    })
+    const lines = [
+      `- provider: ${first.provider}`,
+      `  project: ${first.decodedProjectPath}`,
+      `  sessionId: ${first.sessionId}`,
+      `  open_action: ACTION:open_session:${openAction}`,
+      `  session_url: ${sessionHref}`,
+    ]
+    for (const hit of hits.slice(0, 2)) lines.push(`  hit L${hit.lineNo}: ${hit.context}`)
+    return lines.join('\n')
+  })
+
+  return [
+    '## Conversation Search Results',
+    `Query: "${query}"`,
+    `Matches: ${results.length} snippets across ${grouped.size} sessions.`,
+    'Use these search hits first. If the user asks for deeper detail, inspect the most relevant matching sessions.',
+    '',
+    ...blocks,
+  ].join('\n')
+}
+
 export async function POST(req: NextRequest) {
   const authErr = await requireAuth(req)
   if (authErr) return authErr
@@ -101,6 +163,10 @@ export async function POST(req: NextRequest) {
 
   // Assemble the full unified context
   const ctx = assembleBrainContext(userMessage)
+  const searchQuery = extractConversationSearchQuery(userMessage)
+  const searchContext = searchQuery
+    ? formatConversationSearchResults(searchQuery, searchAllConversations(searchQuery, { limit: 12 }))
+    : ''
 
   // Build conversation history (last 10 turns)
   const historyBlock = (messages ?? [])
@@ -113,6 +179,7 @@ export async function POST(req: NextRequest) {
     `\nBrain/delegation provider preference: ${selectedProvider}.`,
     '',
     ctx.text,
+    searchContext,
     historyBlock ? `\n## Conversation History\n${historyBlock}` : '',
     `\n## User\n${userMessage.trim()}`,
   ].filter(Boolean).join('\n')

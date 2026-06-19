@@ -162,7 +162,9 @@ function useActionExecutor(onResult: (msg: string) => void) {
     try {
       const p = action.payload
       if (action.type === 'open_session' && p.encodedFilepath) {
-        router.push(`/session?f=${p.encodedFilepath}`); return 'done'
+        const mode = p.provider === 'codex' ? 'codex' : 'claude'
+        router.push(mode === 'codex' ? `/session?mode=codex&f=${p.encodedFilepath}` : `/session?f=${p.encodedFilepath}`)
+        return 'done'
       }
       if (action.type === 'start_session' && p.project) {
         const res = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },

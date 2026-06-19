@@ -792,7 +792,9 @@ export function searchSessions(
         } catch { /* keep empty */ }
 
         results.push({
+          provider: 'claude',
           filepath,
+          encodedFilepath: encodeB64(filepath),
           sessionId,
           projectDirName: dirName,
           decodedProjectPath: decodeProjectPath(dirName),

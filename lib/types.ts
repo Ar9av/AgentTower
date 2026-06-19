@@ -137,7 +137,9 @@ export interface ClaudeProcess {
 // ─── Search results ────────────────────────────────────────────────────────
 
 export interface SearchResult {
+  provider: AgentMode
   filepath: string
+  encodedFilepath: string
   sessionId: string
   projectDirName: string
   decodedProjectPath: string

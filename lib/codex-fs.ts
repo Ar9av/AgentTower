@@ -2,7 +2,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { getWorkspaceRoot, loadProjectMeta } from './project-meta'
-import type { ContentBlock, PaginatedSession, ParsedMessage, ProjectInfo, SessionInfo } from './types'
+import type { ContentBlock, PaginatedSession, ParsedMessage, ProjectInfo, SearchResult, SessionInfo } from './types'
+import { encodeB64 } from './claude-fs'
 
 interface CodexSessionMeta {
   id?: string
@@ -352,6 +353,153 @@ function extractLastSummary(messages: ParsedMessage[]): string | null {
     if (text) return text.slice(0, 160)
   }
   return null
+}
+
+function parseKeywords(query: string): string[] {
+  const keywords: string[] = []
+  const re = /"([^"]+)"|(\S+)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(query)) !== null) {
+    const kw = m[1] ?? m[2]
+    if (kw.length > 0) keywords.push(kw)
+  }
+  return keywords
+}
+
+function extractSearchableText(line: string, parsed: Record<string, unknown>): string {
+  const payload = (parsed.payload && typeof parsed.payload === 'object') ? parsed.payload as Record<string, unknown> : null
+  const type = parsed.type
+
+  if (type === 'response_item' && payload?.type === 'message') {
+    const content = Array.isArray(payload.content) ? payload.content as Array<{ text?: string }> : []
+    const joined = content.map(item => item.text ?? '').filter(Boolean).join('\n').trim()
+    if (joined) return joined
+  }
+
+  if (type === 'response_item' && payload?.type === 'reasoning') {
+    const summary = Array.isArray(payload.summary) ? payload.summary as Array<{ text?: string }> : []
+    const joined = summary.map(item => item.text ?? '').filter(Boolean).join('\n').trim()
+    if (joined) return joined
+  }
+
+  if (type === 'response_item' && payload?.type === 'custom_tool_call') {
+    const name = typeof payload.name === 'string' ? payload.name : 'tool'
+    const input = typeof payload.input === 'string' ? payload.input : JSON.stringify(payload.input ?? {})
+    return `${name}: ${input}`
+  }
+
+  if (type === 'response_item' && payload?.type === 'custom_tool_call_output') {
+    return typeof payload.output === 'string' ? payload.output : JSON.stringify(payload.output ?? {})
+  }
+
+  return line
+}
+
+function buildSearchMsgUuid(sessionId: string, lineNo: number, parsed: Record<string, unknown>): string {
+  const payload = (parsed.payload && typeof parsed.payload === 'object') ? parsed.payload as Record<string, unknown> : null
+  if (parsed.type !== 'response_item' || !payload) return ''
+  if (payload.type === 'message') return `${sessionId}:line:${lineNo}`
+  if (payload.type === 'reasoning') return `${sessionId}:reasoning:${lineNo}`
+  if (payload.type === 'custom_tool_call') return `${sessionId}:toolcall:${lineNo}`
+  if (payload.type === 'custom_tool_call_output') return `${sessionId}:toolout:${lineNo}`
+  return ''
+}
+
+export function searchCodexSessions(
+  query: string,
+  opts: { projectPath?: string; regex?: boolean } = {}
+): SearchResult[] {
+  const results: SearchResult[] = []
+
+  let re: RegExp | null = null
+  let keywordRes: RegExp[] = []
+  let matcher: (text: string) => boolean
+  if (opts.regex) {
+    try {
+      re = new RegExp(query, 'i')
+      matcher = text => re!.test(text)
+    } catch {
+      return []
+    }
+  } else {
+    const keywords = parseKeywords(query)
+    keywordRes = keywords.map(kw => new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
+    matcher = text => keywordRes.every(kre => kre.test(text))
+  }
+
+  for (const filepath of getAllSessionFiles()) {
+    const meta = readCodexSessionMeta(filepath)
+    if (!meta?.cwd) continue
+    if (opts.projectPath && meta.cwd !== opts.projectPath) continue
+
+    let content: string
+    let mtime: number
+    try {
+      content = fs.readFileSync(filepath, 'utf-8')
+      mtime = fs.statSync(filepath).mtimeMs
+    } catch {
+      continue
+    }
+
+    const sessionId = meta.id || getCodexSessionId(filepath)
+    const lines = content.split('\n')
+    let sessionHits = 0
+
+    for (let i = 0; i < lines.length; i++) {
+      if (sessionHits >= 5) break
+      const line = lines[i]
+      if (!line.trim()) continue
+
+      let parsed: Record<string, unknown> | null = null
+      try {
+        parsed = JSON.parse(line) as Record<string, unknown>
+      } catch {
+        parsed = null
+      }
+
+      const context = parsed ? extractSearchableText(line, parsed) : line
+      if (!matcher(context)) continue
+
+      let matchIdx = 0
+      let matchLen = query.length
+      if (re) {
+        re.lastIndex = 0
+        const m = re.exec(context)
+        if (m) { matchIdx = m.index; matchLen = m[0].length }
+      } else if (keywordRes.length > 0) {
+        const firstRe = keywordRes[0]
+        firstRe.lastIndex = 0
+        const m = firstRe.exec(context)
+        if (m) { matchIdx = m.index; matchLen = m[0].length }
+      } else {
+        matchIdx = context.toLowerCase().indexOf(query.toLowerCase())
+      }
+
+      const start = Math.max(0, matchIdx - 60)
+      const end = Math.min(context.length, matchIdx + matchLen + 60)
+      const snippet = (start > 0 ? '…' : '') + context.slice(start, end) + (end < context.length ? '…' : '')
+
+      results.push({
+        provider: 'codex',
+        filepath,
+        encodedFilepath: encodeB64(filepath),
+        sessionId,
+        projectDirName: meta.cwd,
+        decodedProjectPath: meta.cwd,
+        lineNo: i + 1,
+        context: snippet,
+        timestamp: new Date(mtime).toISOString(),
+        mtime,
+        msgUuid: parsed ? buildSearchMsgUuid(sessionId, i + 1, parsed) : '',
+      })
+      sessionHits++
+    }
+
+    if (results.length >= 200) break
+  }
+
+  results.sort((a, b) => b.mtime - a.mtime)
+  return results
 }
 
 export function discoverCodexProjects(): ProjectInfo[] {
