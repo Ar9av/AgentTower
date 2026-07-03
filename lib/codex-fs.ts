@@ -1,7 +1,8 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { getWorkspaceRoot, loadProjectMeta, shouldHideProjectPath } from './project-meta'
+import { getWorkspaceRoot, loadProjectMeta } from './project-meta'
+import { shouldHideProjectPath } from './settings'
 import type { ContentBlock, PaginatedSession, ParsedMessage, ProjectInfo, SearchResult, SessionInfo } from './types'
 import { encodeB64 } from './claude-fs'
 

@@ -55,6 +55,16 @@ function IconPlug() {
   )
 }
 
+function IconSettings() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 8.92 4.6H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c0 .66.39 1.26 1 1.51H21a2 2 0 0 1 0 4h-.09c-.61.25-1 .85-1 1.49Z"/>
+    </svg>
+  )
+}
+
 function IconBookmark() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -309,6 +319,7 @@ export default function Nav() {
           <NavLink href="/orchestrate" icon={<IconOrchestrate />} label="Orchestrate" active={is('/orchestrate')} />
           <NavLink href="/daily-brief" icon={<IconClipboard />} label="Brief" active={is('/daily-brief')} />
           <NavLink href="/integrations" icon={<IconPlug />} label="Integrations" active={is('/integrations')} />
+          <NavLink href="/settings" icon={<IconSettings />} label="Settings" active={is('/settings')} />
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -345,6 +356,23 @@ export default function Nav() {
           </Link>
 
           <Notifications />
+
+          <Link
+            href="/settings"
+            className="glass-btn"
+            title="Settings"
+            aria-label="Open settings"
+            style={{
+              padding: '6px 10px', minHeight: 34,
+              display: 'flex', alignItems: 'center',
+              color: is('/settings') ? 'var(--accent)' : undefined,
+              background: is('/settings') ? 'var(--accent-dim)' : undefined,
+              borderColor: is('/settings') ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : undefined,
+              textDecoration: 'none',
+            }}
+          >
+            <IconSettings />
+          </Link>
 
           {/* Theme toggle */}
           <button

@@ -16,7 +16,8 @@ import {
   GitStatus,
 } from './types'
 import { scanClaudeSessions, getProcessState } from './process'
-import { loadProjectMeta, getWorkspaceRoot, shouldHideProjectPath } from './project-meta'
+import { loadProjectMeta, getWorkspaceRoot } from './project-meta'
+import { shouldHideProjectPath } from './settings'
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
