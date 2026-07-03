@@ -56,3 +56,13 @@ export function getWorkspaceRoot(): string {
   } catch {}
   return path.join(os.homedir(), 'projects')
 }
+
+export function shouldHideProjectPath(projectPath: string): boolean {
+  const resolved = path.resolve(projectPath)
+  return (
+    resolved === '/tmp' ||
+    resolved.startsWith(`/tmp${path.sep}`) ||
+    resolved === '/private/tmp' ||
+    resolved.startsWith(`/private/tmp${path.sep}`)
+  )
+}

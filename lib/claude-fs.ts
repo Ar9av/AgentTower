@@ -16,7 +16,7 @@ import {
   GitStatus,
 } from './types'
 import { scanClaudeSessions, getProcessState } from './process'
-import { loadProjectMeta, getWorkspaceRoot } from './project-meta'
+import { loadProjectMeta, getWorkspaceRoot, shouldHideProjectPath } from './project-meta'
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
@@ -460,6 +460,7 @@ export function discoverProjects(): ProjectInfo[] {
       const recorded = readSessionCwd(path.join(dirPath, f))
       if (recorded) { decodedPath = recorded; break }
     }
+    if (shouldHideProjectPath(decodedPath)) continue
 
     const hasActive =
       runningCwds.has(decodedPath) ||
@@ -485,6 +486,7 @@ export function discoverProjects(): ProjectInfo[] {
     for (const e of wsEntries) {
       if (!e.isDirectory()) continue
       const p = path.join(workspaceRoot, e.name)
+      if (shouldHideProjectPath(p)) continue
       if (byPath.has(p)) continue
       let mtime = 0
       try { mtime = fs.statSync(p).mtimeMs } catch {}
@@ -503,6 +505,7 @@ export function discoverProjects(): ProjectInfo[] {
 
   // Also pick up any metadata-only entries (edge case: path deleted but meta remains)
   for (const [p, m] of Object.entries(meta)) {
+    if (shouldHideProjectPath(p)) continue
     if (byPath.has(p)) continue
     if (!fs.existsSync(p)) continue
     const dirName = p.replace(/\./g, '-').replace(/\//g, '-')

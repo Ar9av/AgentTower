@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { getWorkspaceRoot, loadProjectMeta } from './project-meta'
+import { getWorkspaceRoot, loadProjectMeta, shouldHideProjectPath } from './project-meta'
 import type { ContentBlock, PaginatedSession, ParsedMessage, ProjectInfo, SearchResult, SessionInfo } from './types'
 import { encodeB64 } from './claude-fs'
 
@@ -510,6 +510,7 @@ export function discoverCodexProjects(): ProjectInfo[] {
     const session = readCodexSessionMeta(file)
     const cwd = session?.cwd
     if (!cwd) continue
+    if (shouldHideProjectPath(cwd)) continue
 
     let mtime = 0
     try { mtime = fs.statSync(file).mtimeMs } catch {}
@@ -540,6 +541,7 @@ export function discoverCodexProjects(): ProjectInfo[] {
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
       const projectPath = path.join(workspaceRoot, entry.name)
+      if (shouldHideProjectPath(projectPath)) continue
       if (byPath.has(projectPath)) continue
       let mtime = 0
       try { mtime = fs.statSync(projectPath).mtimeMs } catch {}
@@ -556,6 +558,7 @@ export function discoverCodexProjects(): ProjectInfo[] {
   } catch {}
 
   for (const [projectPath, projectMeta] of Object.entries(meta)) {
+    if (shouldHideProjectPath(projectPath)) continue
     if (byPath.has(projectPath)) continue
     if (!fs.existsSync(projectPath)) continue
     let mtime = 0
