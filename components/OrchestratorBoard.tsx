@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import type { IssueRecord, RunRecord } from '@/lib/orchestrator-types'
+import { appPath } from '@/lib/base-path'
 
 interface RecentSession {
   sessionId: string
@@ -179,11 +180,11 @@ export default function OrchestratorBoard() {
   const loadData = useCallback(async () => {
     try {
       const [issuesRes, runsRes, sessionsRes, configRes, daemonRes] = await Promise.all([
-        fetch('/api/orchestrator/issues'),
-        fetch('/api/orchestrator/runs'),
-        fetch('/api/recent-sessions?limit=50'),
-        fetch('/api/orchestrator/config'),
-        fetch('/api/orchestrator/control', {
+        fetch(appPath('/api/orchestrator/issues')),
+        fetch(appPath('/api/orchestrator/runs')),
+        fetch(appPath('/api/recent-sessions?limit=50')),
+        fetch(appPath('/api/orchestrator/config')),
+        fetch(appPath('/api/orchestrator/control'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'status' }),
@@ -220,7 +221,7 @@ export default function OrchestratorBoard() {
     setDispatchingKey(key)
     setError('')
     try {
-      const res = await fetch('/api/orchestrator/dispatch', {
+      const res = await fetch(appPath('/api/orchestrator/dispatch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repoId, issueNumber, issueTitle }),

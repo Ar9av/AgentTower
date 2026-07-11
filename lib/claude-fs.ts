@@ -22,7 +22,9 @@ import { shouldHideProjectPath } from './settings'
 // ─── Config ────────────────────────────────────────────────────────────────
 
 export function getClaudeDir(): string {
-  return path.resolve(process.env.CLAUDE_DIR ?? path.join(os.homedir(), '.claude'))
+  const raw = process.env.CLAUDE_DIR ?? path.join(os.homedir(), '.claude')
+  const expanded = raw.startsWith('~') ? path.join(os.homedir(), raw.slice(1)) : raw
+  return path.resolve(expanded)
 }
 
 export function getProjectsDir(): string {
@@ -932,7 +934,7 @@ export function findSessionByPrefix(prefix: string): { sessionId: string; filepa
 }
 
 export function findSessionProjectCwd(sessionId: string): string | null {
-  const projectsDir = path.join(process.env.CLAUDE_DIR || path.join(os.homedir(), ".claude"), "projects")
+  const projectsDir = getProjectsDir()
   let dirs: string[]
   try { dirs = fs.readdirSync(projectsDir) } catch { return null }
   for (const d of dirs) {

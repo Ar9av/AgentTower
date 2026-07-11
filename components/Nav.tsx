@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useTheme } from './ThemeProvider'
 import { useSidebar } from './SidebarProvider'
 import Notifications from './Notifications'
+import { appPath } from '@/lib/base-path'
 
 // ── Inline SVG icons ────────────────────────────────────────────────────────
 function IconBarChart() {
@@ -227,7 +228,7 @@ export default function Nav() {
   }, [])
 
   async function handleLogout() {
-    await fetch('/api/auth/logout', { method: 'POST' })
+    await fetch(appPath('/api/auth/logout'), { method: 'POST' })
     router.push('/login')
   }
 

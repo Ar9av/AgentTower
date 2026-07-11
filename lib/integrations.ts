@@ -91,6 +91,10 @@ export function getGitHubToken(): string {
   )
 }
 
+export function getOpenAIKey(): string {
+  return process.env.OPENAI_API_KEY || loadIntegrations().telegram?.openaiApiKey || ''
+}
+
 export function getGitHubTokenSource(): 'env' | 'integrations' | 'gh-cli' | null {
   if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) return 'env'
   if (loadIntegrations().github?.token) return 'integrations'

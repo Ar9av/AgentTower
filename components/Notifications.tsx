@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { appPath } from '@/lib/base-path'
 
 interface RecentSession {
   sessionId: string
@@ -35,7 +36,7 @@ export default function Notifications() {
 
   async function poll() {
     try {
-      const res = await fetch('/api/recent-sessions?limit=30')
+      const res = await fetch(appPath('/api/recent-sessions?limit=30'))
       if (!res.ok) return
       const sessions = await res.json() as RecentSession[]
       const cutoff = Date.now() - WINDOW_MS

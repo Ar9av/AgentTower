@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import BrainChat from './BrainChat'
+import VoiceCapture from './VoiceCapture'
 
 interface Alert {
   id: string
@@ -304,6 +305,7 @@ export default function BrainWorkspace() {
           <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>Brain</div>
           <div className="brain-subtitle" style={{ fontSize: 11, color: 'var(--text3)' }}>Unified orchestrator · reads sessions, wiki & memory · acts on your agents</div>
         </div>
+        <VoiceCapture />
         <button className="brain-mobile-monitor" onClick={() => setRailOpen(true)} aria-label="Open agent monitor">
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: agents.some(a => a.active) ? 'var(--green)' : 'var(--text3)' }} />
           Monitor

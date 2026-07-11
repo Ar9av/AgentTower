@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import type { OrchestratorConfig as Cfg, RepoConfig } from '@/lib/orchestrator-types'
+import { appPath } from '@/lib/base-path'
 
 interface ConfigData {
   config: Cfg
@@ -170,7 +171,7 @@ export default function OrchestratorConfig() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/orchestrator/config')
+      const res = await fetch(appPath('/api/orchestrator/config'))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const d = await res.json() as ConfigData
       setData(d)
@@ -189,7 +190,7 @@ export default function OrchestratorConfig() {
 
   const loadDaemon = useCallback(async () => {
     try {
-      const res = await fetch('/api/orchestrator/control', {
+      const res = await fetch(appPath('/api/orchestrator/control'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'status' }),
@@ -202,7 +203,7 @@ export default function OrchestratorConfig() {
     setGhReposLoading(true)
     setGhReposError('')
     try {
-      const res = await fetch('/api/orchestrator/github-repos')
+      const res = await fetch(appPath('/api/orchestrator/github-repos'))
       const d = await res.json() as { repos?: GhRepo[]; error?: string }
       if (d.error) {
         setGhReposError(d.error)
@@ -221,7 +222,7 @@ export default function OrchestratorConfig() {
     loadDaemon()
 
     // GitHub integration status
-    fetch('/api/integrations/github')
+    fetch(appPath('/api/integrations/github'))
       .then(r => r.json())
       .then((d: { github: GitHubStatus }) => {
         setGithubStatus(d.github)
@@ -230,7 +231,7 @@ export default function OrchestratorConfig() {
       .catch(() => {})
 
     // Projects with githubUrl for the import picker
-    fetch('/api/projects/meta')
+    fetch(appPath('/api/projects/meta'))
       .then(r => r.json())
       .then((store: ProjectMetaStore) => {
         const list = Object.entries(store.projects)
@@ -256,7 +257,7 @@ export default function OrchestratorConfig() {
       const cfg: Partial<Cfg> = {
         enabled, pollIntervalSec, globalMaxConcurrent, workspaceRoot, agentTowerUrl, repos,
       }
-      const res = await fetch('/api/orchestrator/config', {
+      const res = await fetch(appPath('/api/orchestrator/config'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cfg),
@@ -274,7 +275,7 @@ export default function OrchestratorConfig() {
   const daemonAction = async (action: 'start' | 'stop') => {
     setDaemonLoading(true)
     try {
-      await fetch('/api/orchestrator/control', {
+      await fetch(appPath('/api/orchestrator/control'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),

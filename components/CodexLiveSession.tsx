@@ -4,15 +4,7 @@ import { useRouter } from 'next/navigation'
 import type { PaginatedSession, ParsedMessage } from '@/lib/types'
 import MessageBlock from './MessageBlock'
 import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment'
-
-const CODEX_MODEL_OPTIONS = [
-  { value: '', label: 'Default model' },
-  { value: 'gpt-5.5', label: 'GPT-5.5' },
-  { value: 'gpt-5.4', label: 'GPT-5.4' },
-  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
-  { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark' },
-  { value: '__custom__', label: 'Custom…' },
-] as const
+import { useCodexModelSelection } from '@/lib/use-codex-model-selection'
 
 interface Props {
   initialData: PaginatedSession
@@ -46,8 +38,15 @@ export default function CodexLiveSession({
   const [exporting, setExporting] = useState(false)
   const [sessionFilter, setSessionFilter] = useState('')
   const [replyTimedOut, setReplyTimedOut] = useState(false)
-  const [codexModelPreset, setCodexModelPreset] = useState('')
-  const [customCodexModel, setCustomCodexModel] = useState('')
+  const {
+    options: codexModelOptions,
+    codexModelPreset,
+    customCodexModel,
+    selectedModel,
+    customModelValue,
+    setCodexModelPreset,
+    setCustomCodexModel,
+  } = useCodexModelSelection()
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -77,24 +76,6 @@ export default function CodexLiveSession({
     }, 120)
     return () => clearTimeout(timer)
   }, [scrollTarget, messages.length])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const saved = localStorage.getItem('codex-model') || ''
-    const isPreset = CODEX_MODEL_OPTIONS.some(option => option.value === saved && option.value !== '__custom__')
-    if (isPreset) {
-      setCodexModelPreset(saved)
-      setCustomCodexModel('')
-      return
-    }
-    if (saved) {
-      setCodexModelPreset('__custom__')
-      setCustomCodexModel(saved)
-      return
-    }
-    setCodexModelPreset('')
-    setCustomCodexModel('')
-  }, [])
 
   useEffect(() => {
     const es = new EventSource(`/api/tail?mode=codex&f=${encodedFilepath}`)
@@ -142,7 +123,6 @@ export default function CodexLiveSession({
   }
 
   const handlePaste = useImagePaste(setAttachedImage)
-  const selectedModel = codexModelPreset === '__custom__' ? customCodexModel.trim() : codexModelPreset
 
   async function sendInput(e: React.FormEvent) {
     e.preventDefault()
@@ -302,14 +282,7 @@ export default function CodexLiveSession({
           <select
             className="hide-mobile"
             value={codexModelPreset}
-            onChange={e => {
-              const value = e.target.value
-              setCodexModelPreset(value)
-              if (value !== '__custom__') {
-                setCustomCodexModel('')
-                if (typeof window !== 'undefined') localStorage.setItem('codex-model', value)
-              }
-            }}
+            onChange={e => setCodexModelPreset(e.target.value)}
             title="Model for continuing this Codex session"
             style={{
               background: 'var(--glass-bg)',
@@ -321,19 +294,15 @@ export default function CodexLiveSession({
               maxWidth: 180,
             }}
           >
-            {CODEX_MODEL_OPTIONS.map(option => (
+            {codexModelOptions.map(option => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
-          {codexModelPreset === '__custom__' && (
+          {codexModelPreset === customModelValue && (
             <input
               className="hide-mobile"
               value={customCodexModel}
-              onChange={e => {
-                const value = e.target.value
-                setCustomCodexModel(value)
-                if (typeof window !== 'undefined') localStorage.setItem('codex-model', value)
-              }}
+              onChange={e => setCustomCodexModel(e.target.value)}
               placeholder="Custom model"
               title="Custom model for continuing this Codex session"
               style={{
