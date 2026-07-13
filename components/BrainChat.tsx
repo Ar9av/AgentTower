@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import SkillPicker, { SkillButton, useSkills } from './SkillPicker'
@@ -167,36 +168,36 @@ function useActionExecutor(onResult: (msg: string) => void) {
         return 'done'
       }
       if (action.type === 'start_session' && p.project) {
-        const res = await fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        const res = await fetch(appPath('/api/run'), { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ project_path: p.project, prompt: p.prompt ?? 'hello', model: p.model ?? 'sonnet', mode: p.provider ?? 'auto' }) })
         if (res.ok) onResult(`Started session in ${String(p.project).split('/').pop()}`)
         return res.ok ? 'done' : 'error'
       }
       if (action.type === 'send_to_session' && p.sessionId && p.message) {
-        const res = await fetch('/api/input', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        const res = await fetch(appPath('/api/input'), { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ session_id: p.sessionId, prompt: p.message, mode: p.provider }) })
         if (res.ok) onResult(`Sent to ${p.label ?? 'agent'}: "${String(p.message).slice(0, 60)}"`)
         return res.ok ? 'done' : 'error'
       }
       if (action.type === 'kill_session' && p.pid) {
-        const res = await fetch('/api/kill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid: p.pid }) })
+        const res = await fetch(appPath('/api/kill'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid: p.pid }) })
         if (res.ok) onResult(`Killed ${p.label ?? 'agent'}`)
         return res.ok ? 'done' : 'error'
       }
       if (action.type === 'save_memory' && p.fact) {
-        const res = await fetch('/api/brain/memory', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        const res = await fetch(appPath('/api/brain/memory'), { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fact: p.fact, type: p.type }) })
         if (res.ok) onResult('Saved to memory')
         return res.ok ? 'done' : 'error'
       }
       if (action.type === 'update_wiki' && p.path && p.content) {
-        const res = await fetch('/api/brain/wiki', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        const res = await fetch(appPath('/api/brain/wiki'), { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: p.path, title: p.title, content: p.content }) })
         if (res.ok) onResult(`Updated wiki: ${p.path}`)
         return res.ok ? 'done' : 'error'
       }
       if (action.type === 'search_wiki' && p.query) {
-        const res = await fetch(`/api/brain/wiki?q=${encodeURIComponent(String(p.query))}`)
+        const res = await fetch(appPath(`/api/brain/wiki?q=${encodeURIComponent(String(p.query))}`))
         if (res.ok) {
           const data = await res.json()
           const preview = (data.results ?? []).slice(0, 3)
@@ -369,7 +370,7 @@ export default function BrainChat({ variant = 'panel', seedPrompt, onStateChange
     const ctrl = new AbortController()
     abortRef.current = ctrl
     try {
-      const res = await fetch('/api/brain/chat', {
+      const res = await fetch(appPath('/api/brain/chat'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
         body: JSON.stringify({ messages: messages.map(m => ({ role: m.role, content: m.content })), userMessage: content, provider }),
       })

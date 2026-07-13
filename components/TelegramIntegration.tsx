@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useState, useCallback } from 'react'
 
 interface TelegramData {
@@ -29,7 +30,7 @@ export default function TelegramIntegration() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/integrations/telegram')
+      const res = await fetch(appPath('/api/integrations/telegram'))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const d = await res.json() as TelegramData
       setData(d)
@@ -58,7 +59,7 @@ export default function TelegramIntegration() {
       .map(Number)
       .filter(n => !Number.isNaN(n) && n !== 0)
     try {
-      const res = await fetch('/api/integrations/telegram', {
+      const res = await fetch(appPath('/api/integrations/telegram'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -82,7 +83,7 @@ export default function TelegramIntegration() {
 
   async function clearOpenai() {
     if (!confirm('Clear stored OpenAI API key?')) return
-    await fetch('/api/integrations/telegram', {
+    await fetch(appPath('/api/integrations/telegram'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clearOpenaiApiKey: true }),

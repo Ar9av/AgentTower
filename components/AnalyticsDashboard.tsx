@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import {
@@ -65,7 +66,7 @@ export default function AnalyticsDashboard() {
 
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/analytics?range=${range}`)
+    fetch(appPath(`/api/analytics?range=${range}`))
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false) })
       .catch(() => setLoading(false))
@@ -74,13 +75,13 @@ export default function AnalyticsDashboard() {
   async function scoreSession(sessionId: string, encodedFilepath: string) {
     setScoring(sessionId)
     try {
-      await fetch('/api/brain/score', {
+      await fetch(appPath('/api/brain/score'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ sessionId, encodedFilepath }),
       })
       // Refresh to show updated metrics
-      const r = await fetch(`/api/analytics?range=${range}`)
+      const r = await fetch(appPath(`/api/analytics?range=${range}`))
       if (r.ok) setData(await r.json())
     } finally {
       setScoring(null)

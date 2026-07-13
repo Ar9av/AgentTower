@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -38,7 +39,7 @@ export default function ProjectsView({ initialProjects, initialMode }: Props) {
         return
       }
       try {
-        const res = await fetch('/api/integrations/antigravity')
+        const res = await fetch(appPath('/api/integrations/antigravity'))
         if (!res.ok) return
         const d = await res.json() as { antigravity: { enabled: boolean }; agents: AntigravityAgent[] }
         if (d.antigravity.enabled) setAgAgents(d.agents ?? [])
@@ -60,7 +61,7 @@ export default function ProjectsView({ initialProjects, initialMode }: Props) {
   }
 
   async function handleRename(projectPath: string, displayName: string) {
-    const res = await fetch('/api/projects/meta', {
+    const res = await fetch(appPath('/api/projects/meta'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectPath, displayName }),
@@ -74,7 +75,7 @@ export default function ProjectsView({ initialProjects, initialMode }: Props) {
   }
 
   async function handleCreate(payload: { name: string; githubUrl: string; displayName: string }) {
-    const res = await fetch('/api/projects/create', {
+    const res = await fetch(appPath('/api/projects/create'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { ParsedMessage, PaginatedSession } from '@/lib/types'
 import MessageBlock from './MessageBlock'
@@ -163,7 +164,7 @@ export default function LiveSession({
     if (forking) return
     setForking(uuid)
     try {
-      const res = await fetch('/api/fork', {
+      const res = await fetch(appPath('/api/fork'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ f: encodedFilepath, uuid }),
@@ -226,7 +227,7 @@ export default function LiveSession({
   const pollProcessState = useCallback(async () => {
     if (!pid) return
     try {
-      const res = await fetch(`/api/process-state?pid=${pid}`)
+      const res = await fetch(appPath(`/api/process-state?pid=${pid}`))
       if (!res.ok) return
       const { state } = await res.json() as { state: ProcState }
       if (state === 'dead' && (prevState.current === 'running' || prevState.current === 'paused')) {
@@ -251,7 +252,7 @@ export default function LiveSession({
     if (!oldestUuid) { setLoadingMore(false); return }
 
     try {
-      const res = await fetch(`/api/session?f=${encodedFilepath}&limit=50&before=${oldestUuid}`)
+      const res = await fetch(appPath(`/api/session?f=${encodedFilepath}&limit=50&before=${oldestUuid}`))
       if (!res.ok) return
       const data: PaginatedSession = await res.json()
 
@@ -283,7 +284,7 @@ export default function LiveSession({
         return
       }
       try {
-        const res = await fetch('/api/recent-sessions?limit=10')
+        const res = await fetch(appPath('/api/recent-sessions?limit=10'))
         if (!res.ok) return
         const sessions: Array<{ mtime: number; encodedFilepath: string; filepath: string; firstPrompt: string }> = await res.json()
         // A session newer than our send, not the current one, and — critically —
@@ -299,7 +300,7 @@ export default function LiveSession({
           setWaitingForReply(false)
           setWaitingSince(null)
           setProcState('dead')
-          setContinuationUrl(`/session?f=${newer.encodedFilepath}`)
+          setContinuationUrl(appPath(`/session?f=${newer.encodedFilepath}`))
           clearReplyTimeout()
           // Remove stuck optimistic messages
           const stale = Array.from(pendingOptimistic.current)
@@ -388,7 +389,7 @@ export default function LiveSession({
       // 3. Send to Claude
       const inputBody: Record<string, string> = { session_id: sessionId, prompt }
       if (msgModel) inputBody.model = msgModel
-      const res = await fetch('/api/input', {
+      const res = await fetch(appPath('/api/input'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(inputBody),
@@ -423,7 +424,7 @@ export default function LiveSession({
 
   async function resumeProcess() {
     if (!pid) return
-    await fetch('/api/resume', {
+    await fetch(appPath('/api/resume'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pid }),
@@ -438,10 +439,10 @@ export default function LiveSession({
     setSending(true)
     try {
       if (pid) {
-        await fetch('/api/kill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
+        await fetch(appPath('/api/kill'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
         setProcState('dead'); setPid(null)
       }
-      const res = await fetch('/api/run', {
+      const res = await fetch(appPath('/api/run'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_path: projectPath, prompt: promptText, model: MODEL_IDS[model] }),
@@ -452,7 +453,7 @@ export default function LiveSession({
         // Redirect to the newly spawned session
         setTimeout(async () => {
           try {
-            const r = await fetch('/api/recent-sessions?limit=3')
+            const r = await fetch(appPath('/api/recent-sessions?limit=3'))
             if (!r.ok) return
             const sessions = await r.json() as Array<{ encodedFilepath: string; projectDirName: string; mtime: number }>
             const newest = sessions[0]
@@ -474,7 +475,7 @@ export default function LiveSession({
     setSendError(null)
     try {
       if (pid) {
-        await fetch('/api/kill', {
+        await fetch(appPath('/api/kill'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pid }),
@@ -484,7 +485,7 @@ export default function LiveSession({
       // Small pause so the kill lands before spawning
       await new Promise(r => setTimeout(r, 300))
 
-      const res = await fetch('/api/run', {
+      const res = await fetch(appPath('/api/run'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_path: projectPath, prompt: inputText.trim(), model: MODEL_IDS[model] }),
@@ -527,7 +528,7 @@ export default function LiveSession({
     if (exporting) return
     setExporting(true)
     try {
-      const res = await fetch(`/api/export?f=${encodedFilepath}`)
+      const res = await fetch(appPath(`/api/export?f=${encodedFilepath}`))
       if (!res.ok) throw new Error('export failed')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -706,7 +707,7 @@ export default function LiveSession({
           {isRunning && pid && (
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="chip chip-yellow" style={{ cursor: 'pointer', padding: '3px 10px' }}
-                onClick={() => fetch('/api/pause', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) }).then(() => setProcState('paused'))}>
+                onClick={() => fetch(appPath('/api/pause'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) }).then(() => setProcState('paused'))}>
                 Pause
               </button>
               <KillButton pid={pid} onKill={() => { setProcState('dead'); setWasInterrupted(true) }} />
@@ -956,7 +957,7 @@ function ThinkingDots() {
 function KillButton({ pid, onKill }: { pid: number; onKill: () => void }) {
   const [confirm, setConfirm] = useState(false)
   async function doKill() {
-    await fetch('/api/kill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
+    await fetch(appPath('/api/kill'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
     onKill(); setConfirm(false)
   }
   return confirm ? (
@@ -1083,7 +1084,7 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
     if (!pid) return
     setStopping(true)
     try {
-      await fetch('/api/kill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
+      await fetch(appPath('/api/kill'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
     } finally {
       setStopping(false)
     }

@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import type { ParsedMessage } from '@/lib/types'
@@ -171,7 +172,7 @@ export default function LiveTailDrawer({ projectDirName, projectDisplayName, onC
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/recent-sessions?limit=50')
+    fetch(appPath('/api/recent-sessions?limit=50'))
       .then(r => r.ok ? r.json() : [])
       .then((all: Array<{ sessionId: string; encodedFilepath: string; projectDirName: string; isActive: boolean; mtime: number }>) => {
         if (cancelled) return

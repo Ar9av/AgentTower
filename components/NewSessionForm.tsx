@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment'
@@ -105,7 +106,7 @@ export default function NewSessionForm({ projectPath, hasActive, isGitRepo, mode
         }
       }
 
-      const res = await fetch('/api/run', {
+      const res = await fetch(appPath('/api/run'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -148,7 +149,7 @@ export default function NewSessionForm({ projectPath, hasActive, isGitRepo, mode
     setError('')
     setNotice('')
     try {
-      const res = await fetch('/api/project-git', {
+      const res = await fetch(appPath('/api/project-git'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_path: projectPath, action: 'stash-and-pull' }),
@@ -187,7 +188,7 @@ export default function NewSessionForm({ projectPath, hasActive, isGitRepo, mode
     setError('')
     setNotice('')
     try {
-      const res = await fetch(`/api/project-git?project_path=${encodeURIComponent(projectPath)}`)
+      const res = await fetch(appPath(`/api/project-git?project_path=${encodeURIComponent(projectPath)}`))
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(data.error ?? 'Failed to inspect git state')

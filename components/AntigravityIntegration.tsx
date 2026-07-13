@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useState, useCallback } from 'react'
 import type { AntigravityAgent } from '@/lib/types'
 
@@ -28,7 +29,7 @@ export default function AntigravityIntegration() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/integrations/antigravity')
+      const res = await fetch(appPath('/api/integrations/antigravity'))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const d = await res.json() as AntigravityData
       setData(d)
@@ -52,7 +53,7 @@ export default function AntigravityIntegration() {
     setSaved(false)
     setTestResult(null)
     try {
-      const res = await fetch('/api/integrations/antigravity', {
+      const res = await fetch(appPath('/api/integrations/antigravity'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -76,7 +77,7 @@ export default function AntigravityIntegration() {
 
   async function clearKey() {
     if (!confirm('Clear stored Antigravity API key?')) return
-    await fetch('/api/integrations/antigravity', {
+    await fetch(appPath('/api/integrations/antigravity'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clearApiKey: true }),
@@ -88,7 +89,7 @@ export default function AntigravityIntegration() {
     setTesting(true)
     setTestResult(null)
     try {
-      const res = await fetch('/api/integrations/antigravity?test=1')
+      const res = await fetch(appPath('/api/integrations/antigravity?test=1'))
       const d = await res.json() as { connected: boolean; agentCount?: number; error?: string }
       setTestResult(d)
     } catch (err) {

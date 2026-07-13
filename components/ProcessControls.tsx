@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useState } from 'react'
 
 interface Props {
@@ -13,7 +14,7 @@ export default function ProcessControls({ pid, state }: Props) {
   async function send(action: string) {
     setLoading(action)
     try {
-      await fetch(`/api/${action}`, {
+      await fetch(appPath(`/api/${action}`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pid }),

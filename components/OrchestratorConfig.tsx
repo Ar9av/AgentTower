@@ -1,8 +1,8 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import type { OrchestratorConfig as Cfg, RepoConfig } from '@/lib/orchestrator-types'
-import { appPath } from '@/lib/base-path'
 
 interface ConfigData {
   config: Cfg
