@@ -116,6 +116,28 @@ pkill -f "next start"  # production
 | `CLAUDE_DIR` | No | `~/.claude` | Only change if Claude config is in a non-default location |
 | `SESSION_TTL_DAYS` | No | `7` | Cookie lifetime in days |
 | `ACTIVE_THRESHOLD_SECS` | No | `300` | Recency window for "active" sessions |
+| `API_KEY` | No | — | Enables external API access. Requests send `Authorization: Bearer <API_KEY>` instead of the login cookie. Unset = external API disabled. |
+
+---
+
+## External API (`/api/v1`)
+
+For scripts/agents that aren't a browser, set `API_KEY` in `.env.local` and call:
+
+```bash
+curl -H "Authorization: Bearer $API_KEY" http://localhost:3000/api/v1/sessions
+```
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/sessions` | GET | List sessions (`?limit=&offset=&all=1&active=1&project=&provider=claude\|codex\|all`) — omit `all`/`limit` for the 20 most recent; `all=1` returns every match; response includes `total` for pagination |
+| `/api/v1/projects` | GET | List all projects with session counts (`?active=1&provider=claude\|codex\|all`) |
+| `/api/v1/sessions/:id` | GET | Paginated messages for a session, by id or id prefix (`?limit=&before=&around=`) |
+| `/api/v1/sessions/:id/recap` | GET | Last message + stats; add `?llm=1` for a 1-2 sentence AI recap of recent turns |
+| `/api/v1/sessions/:id/message` | POST | `{ prompt, model?, timeoutMs? }` — sends a prompt into the session and **blocks** until the agent finishes, returning its reply |
+| `/api/v1/search` | GET | Full-text search across all sessions (`?q=&provider=&project=&regex=1`) |
+
+These endpoints also accept the browser's `clv_session` cookie, so they work identically from the UI.
 
 ---
 
@@ -151,3 +173,19 @@ Replace `MYPASSWORD` with the user's chosen password:
 git clone https://github.com/Ar9av/agenttower && cd agenttower && printf "AUTH_PASSWORD=MYPASSWORD\n" > .env.local && npm install && npm run dev &
 sleep 5 && open http://localhost:3000
 ```
+
+## Security (Prismor)
+
+This workspace is protected by Prismor. Run `prismor status` at the start of every session.
+
+Key commands:
+
+| Action | Command |
+|---|---|
+| Check protection state | `prismor status` |
+| Install packages safely | `prismor supplychain <pm> install <pkg>` |
+| Pre-check a risky command | `prismor check "<cmd>"` |
+| Scan for dep vulnerabilities | `prismor deps` |
+| Harden package config | `prismor supplychain harden` |
+
+Full decision tree: `.claude/skills/immunity-agent/SKILL.md`

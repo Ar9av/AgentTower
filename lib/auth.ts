@@ -145,9 +145,32 @@ export function clearCookieHeader(): string {
   return `${COOKIE_NAME}=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/`
 }
 
+// ─── API key (for external / non-browser access) ──────────────────────────
+
+export function validateApiKey(key: string | undefined | null): boolean {
+  if (!key) return false
+  const expected = process.env.API_KEY ?? ''
+  if (!expected) return false
+  const actual = Buffer.from(key)
+  const expectedBuffer = Buffer.from(expected)
+  return actual.length === expectedBuffer.length && crypto.timingSafeEqual(actual, expectedBuffer)
+}
+
+function getBearerToken(req: NextRequest): string | null {
+  const header = req.headers.get('authorization') ?? ''
+  const match = /^Bearer\s+(.+)$/i.exec(header)
+  return match ? match[1].trim() : null
+}
+
 // ─── Auth guard for API routes ─────────────────────────────────────────────
+// Accepts either the browser session cookie or an `Authorization: Bearer
+// <API_KEY>` header, so the same endpoints work for the UI and for external
+// callers (scripts, other agents) without a browser session.
 
 export async function requireAuth(req: NextRequest): Promise<NextResponse | null> {
+  const bearer = getBearerToken(req)
+  if (bearer && validateApiKey(bearer)) return null
+
   const token = req.cookies.get(COOKIE_NAME)?.value
   if (!validateSession(token)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
