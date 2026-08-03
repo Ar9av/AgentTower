@@ -6,10 +6,12 @@ const CONFIG_PATH = path.join(os.homedir(), '.claude', 'agenttower-settings.json
 
 export interface AppSettings {
   projectIgnoreRules: string[]
+  terminalEnabled: boolean
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   projectIgnoreRules: [],
+  terminalEnabled: false,
 }
 
 const DEFAULT_PROJECT_IGNORE_REGEXES = [
@@ -25,6 +27,7 @@ export function loadSettings(): AppSettings {
       projectIgnoreRules: Array.isArray(parsed.projectIgnoreRules)
         ? parsed.projectIgnoreRules.filter((v): v is string => typeof v === 'string')
         : [],
+      terminalEnabled: typeof parsed.terminalEnabled === 'boolean' ? parsed.terminalEnabled : false,
     }
   } catch {
     return { ...DEFAULT_SETTINGS }

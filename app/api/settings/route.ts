@@ -40,7 +40,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid ignore rule' }, { status: 400 })
   }
 
-  const next: AppSettings = { projectIgnoreRules: rules }
+  const terminalEnabled = typeof body.terminalEnabled === 'boolean'
+    ? body.terminalEnabled
+    : loadSettings().terminalEnabled
+
+  const next: AppSettings = { projectIgnoreRules: rules, terminalEnabled }
   saveSettings(next)
 
   return NextResponse.json({

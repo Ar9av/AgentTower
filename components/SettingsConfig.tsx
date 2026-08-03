@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 interface SettingsData {
   settings: {
     projectIgnoreRules: string[]
+    terminalEnabled: boolean
   }
   configPath: string
   defaultProjectIgnoreRegexes: string[]
@@ -31,6 +32,7 @@ function toRegexPreview(rule: string): string {
 export default function SettingsConfig() {
   const [data, setData] = useState<SettingsData | null>(null)
   const [rulesText, setRulesText] = useState('')
+  const [terminalEnabled, setTerminalEnabled] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -42,6 +44,7 @@ export default function SettingsConfig() {
       const next = await res.json() as SettingsData
       setData(next)
       setRulesText(next.settings.projectIgnoreRules.join('\n'))
+      setTerminalEnabled(next.settings.terminalEnabled)
     } catch (err) {
       setError(String(err))
     }
@@ -58,7 +61,7 @@ export default function SettingsConfig() {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectIgnoreRules: rules }),
+        body: JSON.stringify({ projectIgnoreRules: rules, terminalEnabled }),
       })
       const payload = await res.json() as { error?: string }
       if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`)
@@ -79,7 +82,30 @@ export default function SettingsConfig() {
   const liveRules = rulesText.split('\n').map(v => v.trim()).filter(Boolean)
 
   return (
-    <div className="glass" style={{ borderRadius: 16, padding: 'clamp(16px, 3vw, 24px)' }}>
+    <div style={{ display: 'grid', gap: 16 }}>
+      <div className="glass" style={{ borderRadius: 16, padding: 'clamp(16px, 3vw, 24px)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontSize: 26 }}>💻</div>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Terminal</h2>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text3)' }}>
+              Lets you run shell commands on this host from the browser. Off by default — anyone with your login password
+              can then run arbitrary commands, so only enable this if you trust everyone with access to this deployment.
+            </p>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flexShrink: 0 }}>
+            <input
+              type="checkbox"
+              checked={terminalEnabled}
+              onChange={e => setTerminalEnabled(e.target.checked)}
+              style={{ width: 16, height: 16 }}
+            />
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{terminalEnabled ? 'Enabled' : 'Disabled'}</span>
+          </label>
+        </div>
+      </div>
+
+      <div className="glass" style={{ borderRadius: 16, padding: 'clamp(16px, 3vw, 24px)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <div style={{ fontSize: 26 }}>⚙️</div>
         <div style={{ flex: 1 }}>
@@ -176,6 +202,7 @@ export default function SettingsConfig() {
         >
           {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save settings'}
         </button>
+      </div>
       </div>
     </div>
   )
