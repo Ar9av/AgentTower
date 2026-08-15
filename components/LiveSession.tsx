@@ -10,6 +10,8 @@ import SkillPicker, { SkillButton, useSkills } from './SkillPicker'
 
 type ProcState = 'running' | 'paused' | 'dead' | 'unknown'
 
+const REPLY_TIMEOUT_MS = 60_000
+
 interface Props {
   initialData: PaginatedSession
   encodedFilepath: string
@@ -56,8 +58,10 @@ export default function LiveSession({
   const [exported, setExported]             = useState(false)
   // Optimistic "waiting for Claude" — set true immediately after send, cleared when assistant replies
   const [waitingForReply, setWaitingForReply] = useState(false)
+  const [waitingSince, setWaitingSince]     = useState<number | null>(null)
 
   const [replyTimedOut, setReplyTimedOut]   = useState(false)
+  const [sendError, setSendError]           = useState<string | null>(null)
   const [continuationUrl, setContinuationUrl] = useState<string | null>(null)
   const [forking, setForking]               = useState<string | null>(null)
   const [sessionFilter, setSessionFilter]   = useState('')
@@ -73,6 +77,61 @@ export default function LiveSession({
     ...initialData.messages.map(m => m.uuid),
   ]))
   const prevState = useRef<ProcState>(initialProcState)
+  // Optimistic user messages still waiting to be replaced by the real one from
+  // the tail. Tracked so the timeout only un-counts placeholders that are
+  // actually still on screen.
+  const pendingOptimistic = useRef<Set<string>>(new Set())
+
+  // Directory of this session's jsonl, used to scope continuation matching to
+  // this project — otherwise unrelated sessions (bots, cron jobs) writing at
+  // the same moment get mistaken for our reply.
+  const projectDir = useMemo(() => {
+    try {
+      const b64 = encodedFilepath.replace(/-/g, '+').replace(/_/g, '/')
+      const fp = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))
+      return fp.slice(0, fp.lastIndexOf('/'))
+    } catch { return null }
+  }, [encodedFilepath])
+
+  // ── Reply timeout ─────────────────────────────────────────────────────────
+  // Always go through these two. Assigning replyTimeoutRef.current directly
+  // leaks the previous timer: send a second message before the first replies
+  // and the orphan fires 60s later against a turn that already succeeded,
+  // showing "No reply detected" under a perfectly good answer.
+  const clearReplyTimeout = useCallback(() => {
+    if (replyTimeoutRef.current) {
+      clearTimeout(replyTimeoutRef.current)
+      replyTimeoutRef.current = null
+    }
+  }, [])
+
+  const stopContinuationPoll = useCallback(() => {
+    if (continuationPollRef.current) {
+      clearInterval(continuationPollRef.current)
+      continuationPollRef.current = null
+    }
+  }, [])
+
+  const armReplyTimeout = useCallback(() => {
+    clearReplyTimeout()
+    replyTimeoutRef.current = setTimeout(() => {
+      replyTimeoutRef.current = null
+      setWaitingForReply(false)
+      setWaitingSince(null)
+      setProcState('dead')
+      const stale = Array.from(pendingOptimistic.current)
+      if (stale.length) {
+        pendingOptimistic.current.clear()
+        setMessages(prev => prev.filter(m => !stale.includes(m.uuid)))
+        setTotal(t => t - stale.length)
+      }
+      setReplyTimedOut(true)
+      stopContinuationPoll()
+    }, REPLY_TIMEOUT_MS)
+  }, [clearReplyTimeout, stopContinuationPoll])
+
+  // Clear any armed timer when the session view goes away.
+  useEffect(() => () => { clearReplyTimeout(); stopContinuationPoll() }, [clearReplyTimeout, stopContinuationPoll])
 
   // ── scroll ────────────────────────────────────────────────────────────────
   function checkAtBottom() {
@@ -125,20 +184,26 @@ export default function LiveSession({
     function handleMsg(msg: ParsedMessage) {
       if (seenUuids.current.has(msg.uuid)) return
       seenUuids.current.add(msg.uuid)
+
+      // The real user message replaces any optimistic placeholders, so the
+      // total only moves by the net difference — not +1 per placeholder.
+      const replaced = msg.type === 'user' ? pendingOptimistic.current.size : 0
+      if (replaced) pendingOptimistic.current.clear()
       setMessages(prev => {
-        // Remove optimistic placeholder when the real user message arrives
-        const filtered = prev.filter(m =>
-          !(m.uuid.startsWith('__optimistic__') && m.type === 'user' && msg.type === 'user')
-        )
+        const filtered = replaced
+          ? prev.filter(m => !m.uuid.startsWith('__optimistic__'))
+          : prev
         return [...filtered, msg]
       })
-      setTotal(t => t + 1)
+      setTotal(t => t + 1 - replaced)
+
       if (msg.type === 'assistant') {
         setWaitingForReply(false)
+        setWaitingSince(null)
         setReplyTimedOut(false)
         setContinuationUrl(null)
-        if (replyTimeoutRef.current) { clearTimeout(replyTimeoutRef.current); replyTimeoutRef.current = null }
-        if (continuationPollRef.current) { clearInterval(continuationPollRef.current); continuationPollRef.current = null }
+        clearReplyTimeout()
+        stopContinuationPoll()
       }
     }
 
@@ -155,7 +220,7 @@ export default function LiveSession({
       } catch { /* ignore */ }
     }
     return () => es.close()
-  }, [encodedFilepath])
+  }, [encodedFilepath, clearReplyTimeout, stopContinuationPoll])
 
   // ── Process state polling ─────────────────────────────────────────────────
   const pollProcessState = useCallback(async () => {
@@ -207,38 +272,40 @@ export default function LiveSession({
 
   // Poll /api/recent-sessions to find the continuation session Claude spawned
   function watchForContinuation(sentAt: number) {
-    if (continuationPollRef.current) clearInterval(continuationPollRef.current)
+    stopContinuationPoll()
     setContinuationUrl(null)
     let attempts = 0
 
     continuationPollRef.current = setInterval(async () => {
       attempts++
       if (attempts > 20) { // give up after ~40s
-        clearInterval(continuationPollRef.current!)
-        continuationPollRef.current = null
+        stopContinuationPoll()
         return
       }
       try {
-        const res = await fetch('/api/recent-sessions?limit=5')
+        const res = await fetch('/api/recent-sessions?limit=10')
         if (!res.ok) return
-        const sessions: Array<{ mtime: number; encodedFilepath: string; firstPrompt: string }> = await res.json()
-        // Find a session newer than when we sent, that isn't the current one
+        const sessions: Array<{ mtime: number; encodedFilepath: string; filepath: string; firstPrompt: string }> = await res.json()
+        // A session newer than our send, not the current one, and — critically —
+        // in this same project. Without the project check any unrelated session
+        // (orchestrator, cron, another chat) gets claimed as our reply.
         const newer = sessions.find(s =>
           s.mtime > sentAt - 500 &&
-          s.encodedFilepath !== encodedFilepath
+          s.encodedFilepath !== encodedFilepath &&
+          (!projectDir || s.filepath?.slice(0, s.filepath.lastIndexOf('/')) === projectDir)
         )
         if (newer) {
-          clearInterval(continuationPollRef.current!)
-          continuationPollRef.current = null
+          stopContinuationPoll()
           setWaitingForReply(false)
+          setWaitingSince(null)
           setProcState('dead')
           setContinuationUrl(`/session?f=${newer.encodedFilepath}`)
-          if (replyTimeoutRef.current) {
-            clearTimeout(replyTimeoutRef.current)
-            replyTimeoutRef.current = null
-          }
+          clearReplyTimeout()
           // Remove stuck optimistic messages
+          const stale = Array.from(pendingOptimistic.current)
+          pendingOptimistic.current.clear()
           setMessages(prev => prev.filter(m => !m.uuid.startsWith('__optimistic__')))
+          if (stale.length) setTotal(t => t - stale.length)
         }
       } catch { /* ignore */ }
     }, 2000)
@@ -270,11 +337,17 @@ export default function LiveSession({
     // /compact [hint] and other slash commands pass through to Claude
 
     setSending(true)
+    // A new turn clears the previous turn's verdict — otherwise the warning
+    // sticks around across sends until an assistant message happens to land.
+    setReplyTimedOut(false)
+    setSendError(null)
+    setContinuationUrl(null)
 
     let prompt = inputText.trim()
 
     // 1. Optimistically add the user message to the UI immediately
     const optimisticId = `__optimistic__${Date.now()}`
+    pendingOptimistic.current.add(optimisticId)
     const optimisticMsg: ParsedMessage = {
       uuid: optimisticId,
       parentUuid: null,
@@ -320,10 +393,12 @@ export default function LiveSession({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(inputBody),
       })
+      const body = await res.json().catch(() => ({} as { error?: string }))
       if (res.ok) {
         setProcState('running')
         setWaitingForReply(true)
         const sentAt = Date.now()
+        setWaitingSince(sentAt)
 
         // If the session was already dead, the reply will land in a continuation session.
         // Poll recent-sessions every 2s to find it (much faster than 60s timeout).
@@ -332,24 +407,14 @@ export default function LiveSession({
         }
 
         // Safety fallback: clear spinner after 60s if nothing found
-        const replyTimeout = setTimeout(() => {
-          setWaitingForReply(false)
-          setProcState('dead')
-          setMessages(prev => prev.filter(m => m.uuid !== optimisticId))
-          setTotal(t => t - 1)
-          setReplyTimedOut(true)
-          if (continuationPollRef.current) {
-            clearInterval(continuationPollRef.current)
-            continuationPollRef.current = null
-          }
-        }, 60_000)
-
-        replyTimeoutRef.current = replyTimeout
+        armReplyTimeout()
       } else {
         // Remove optimistic message on failure
+        pendingOptimistic.current.delete(optimisticId)
         setMessages(prev => prev.filter(m => m.uuid !== optimisticId))
         setTotal(t => t - 1)
         setInputText(prompt) // restore input
+        setSendError(body.error || `Claude could not be started (HTTP ${res.status}).`)
       }
     } finally {
       setSending(false)
@@ -405,6 +470,8 @@ export default function LiveSession({
     e.preventDefault()
     if (!inputText.trim() || sending) return
     setSending(true)
+    setReplyTimedOut(false)
+    setSendError(null)
     try {
       if (pid) {
         await fetch('/api/kill', {
@@ -428,9 +495,17 @@ export default function LiveSession({
         setProcState('running')
         setWasInterrupted(false)
         setWaitingForReply(true)
+        const sentAt = Date.now()
+        setWaitingSince(sentAt)
+
+        // /api/run starts a *new* session, so the reply never lands in the file
+        // this view is tailing. Watch for that session instead of sitting here
+        // until the 60s timeout fires — which it always did.
+        watchForContinuation(sentAt)
 
         // Optimistic user message
-        const optimisticId = `__optimistic__${Date.now()}`
+        const optimisticId = `__optimistic__${sentAt}`
+        pendingOptimistic.current.add(optimisticId)
         setMessages(prev => [...prev, {
           uuid: optimisticId, parentUuid: null, type: 'user', role: 'user',
           timestamp: new Date().toISOString(), isMeta: false, isSidechain: false,
@@ -440,11 +515,7 @@ export default function LiveSession({
         setInputText('')
         atBottomRef.current = true
 
-        replyTimeoutRef.current = setTimeout(() => {
-          setWaitingForReply(false); setProcState('dead')
-          setMessages(prev => prev.filter(m => m.uuid !== optimisticId))
-          setTotal(t => t - 1); setReplyTimedOut(true)
-        }, 60_000)
+        armReplyTimeout()
       }
     } finally { setSending(false) }
   }
@@ -780,8 +851,22 @@ export default function LiveSession({
             </div>
           )}
 
+          {/* Claude failed to start — show why, rather than a silent 60s wait */}
+          {sendError && (
+            <div style={{
+              margin: '12px 0', padding: '10px 14px',
+              background: 'color-mix(in srgb, var(--red) 8%, var(--glass-bg))',
+              border: '1px solid color-mix(in srgb, var(--red) 25%, transparent)',
+              borderRadius: 10, fontSize: 13, color: 'var(--text2)',
+              display: 'flex', alignItems: 'flex-start', gap: 8,
+            }}>
+              <span style={{ color: 'var(--red)' }}>✕</span>
+              <span style={{ whiteSpace: 'pre-wrap' }}>{sendError}</span>
+            </div>
+          )}
+
           {/* Reply timed out — fallback */}
-          {replyTimedOut && !continuationUrl && (
+          {replyTimedOut && !continuationUrl && !sendError && (
             <div style={{
               margin: '12px 0', padding: '10px 14px',
               background: 'color-mix(in srgb, var(--yellow) 8%, var(--glass-bg))',
@@ -803,7 +888,7 @@ export default function LiveSession({
                 padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 8,
                 fontSize: 14, color: 'var(--text2)',
               }}>
-                <ThinkingDots /> Claude is thinking…
+                <ThinkingDots /> Claude is thinking… <ElapsedTime since={waitingSince} />
               </div>
             </div>
           )}
@@ -838,6 +923,22 @@ export default function LiveSession({
 }
 
 // ── Sub-components (unchanged from before) ─────────────────────────────────
+
+function ElapsedTime({ since }: { since: number | null }) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (since == null) return
+    const id = setInterval(() => setTick(t => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [since])
+  if (since == null) return null
+  const secs = Math.max(0, Math.floor((Date.now() - since) / 1000))
+  return (
+    <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.65, fontSize: 12 }}>
+      {secs}s
+    </span>
+  )
+}
 
 function ThinkingDots() {
   return (
