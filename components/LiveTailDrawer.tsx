@@ -188,7 +188,7 @@ export default function LiveTailDrawer({ projectDirName, projectDisplayName, onC
 
   useEffect(() => {
     if (!session) return
-    const es = new EventSource(`/api/tail?f=${session.encodedFilepath}`)
+    const es = new EventSource(appPath(`/api/tail?f=${session.encodedFilepath}`))
     es.onopen = () => setConnected(true)
     es.onerror = () => setConnected(false)
     es.onmessage = e => {

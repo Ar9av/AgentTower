@@ -179,7 +179,7 @@ export default function LiveSession({
 
   // ── SSE tail ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    const es = new EventSource(`/api/tail?f=${encodedFilepath}`)
+    const es = new EventSource(appPath(`/api/tail?f=${encodedFilepath}`))
     es.onopen  = () => setConnected(true)
     es.onerror = () => setConnected(false)
     function handleMsg(msg: ParsedMessage) {

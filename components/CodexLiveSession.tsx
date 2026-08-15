@@ -79,7 +79,7 @@ export default function CodexLiveSession({
   }, [scrollTarget, messages.length])
 
   useEffect(() => {
-    const es = new EventSource(`/api/tail?mode=codex&f=${encodedFilepath}`)
+    const es = new EventSource(appPath(`/api/tail?mode=codex&f=${encodedFilepath}`))
     es.onopen = () => setConnected(true)
     es.onerror = () => setConnected(false)
     es.onmessage = (e) => {
