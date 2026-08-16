@@ -63,6 +63,9 @@ export default function LiveSession({
 
   const [replyTimedOut, setReplyTimedOut]   = useState(false)
   const [sendError, setSendError]           = useState<string | null>(null)
+  // Delivery state per optimistic message, so the bubble can say "Sending…"
+  // only while the request is genuinely in flight.
+  const [sendStates, setSendStates]         = useState<Record<string, 'sending' | 'sent'>>({})
   const [continuationUrl, setContinuationUrl] = useState<string | null>(null)
   const [forking, setForking]               = useState<string | null>(null)
   const [sessionFilter, setSessionFilter]   = useState('')
@@ -106,6 +109,19 @@ export default function LiveSession({
     }
   }, [])
 
+  const clearSendState = useCallback((...ids: string[]) => {
+    setSendStates(prev => {
+      if (!ids.some(id => id in prev)) return prev
+      const next = { ...prev }
+      for (const id of ids) delete next[id]
+      return next
+    })
+  }, [])
+
+  const clearAllSendStates = useCallback(() => {
+    setSendStates(prev => (Object.keys(prev).length ? {} : prev))
+  }, [])
+
   const stopContinuationPoll = useCallback(() => {
     if (continuationPollRef.current) {
       clearInterval(continuationPollRef.current)
@@ -123,13 +139,14 @@ export default function LiveSession({
       const stale = Array.from(pendingOptimistic.current)
       if (stale.length) {
         pendingOptimistic.current.clear()
+        clearSendState(...stale)
         setMessages(prev => prev.filter(m => !stale.includes(m.uuid)))
         setTotal(t => t - stale.length)
       }
       setReplyTimedOut(true)
       stopContinuationPoll()
     }, REPLY_TIMEOUT_MS)
-  }, [clearReplyTimeout, stopContinuationPoll])
+  }, [clearReplyTimeout, stopContinuationPoll, clearSendState])
 
   // Clear any armed timer when the session view goes away.
   useEffect(() => () => { clearReplyTimeout(); stopContinuationPoll() }, [clearReplyTimeout, stopContinuationPoll])
@@ -189,7 +206,10 @@ export default function LiveSession({
       // The real user message replaces any optimistic placeholders, so the
       // total only moves by the net difference — not +1 per placeholder.
       const replaced = msg.type === 'user' ? pendingOptimistic.current.size : 0
-      if (replaced) pendingOptimistic.current.clear()
+      if (replaced) {
+        pendingOptimistic.current.clear()
+        clearAllSendStates()
+      }
       setMessages(prev => {
         const filtered = replaced
           ? prev.filter(m => !m.uuid.startsWith('__optimistic__'))
@@ -272,7 +292,15 @@ export default function LiveSession({
   }
 
   // Poll /api/recent-sessions to find the continuation session Claude spawned
-  function watchForContinuation(sentAt: number) {
+  //
+  // Identity, not recency, decides this. Matching on "a newer session in this
+  // project" looks reasonable and is badly wrong in practice: a busy project
+  // has other agents (orchestrator, cron jobs, Telegram bot) writing sessions
+  // every few seconds, so that test fires within one poll and hijacks the view
+  // to a stranger's session — deleting the message you just sent on the way
+  // out. A continuation is only a continuation if it descends from this
+  // session or opens with the exact prompt we just sent.
+  function watchForContinuation(sentAt: number, sentPrompt: string) {
     stopContinuationPoll()
     setContinuationUrl(null)
     let attempts = 0
@@ -286,14 +314,15 @@ export default function LiveSession({
       try {
         const res = await fetch(appPath('/api/recent-sessions?limit=10'))
         if (!res.ok) return
-        const sessions: Array<{ mtime: number; encodedFilepath: string; filepath: string; firstPrompt: string }> = await res.json()
-        // A session newer than our send, not the current one, and — critically —
-        // in this same project. Without the project check any unrelated session
-        // (orchestrator, cron, another chat) gets claimed as our reply.
+        const sessions: Array<{
+          mtime: number; encodedFilepath: string; filepath: string
+          firstPrompt: string; parentSessionId: string | null
+        }> = await res.json()
         const newer = sessions.find(s =>
           s.mtime > sentAt - 500 &&
           s.encodedFilepath !== encodedFilepath &&
-          (!projectDir || s.filepath?.slice(0, s.filepath.lastIndexOf('/')) === projectDir)
+          (!projectDir || s.filepath?.slice(0, s.filepath.lastIndexOf('/')) === projectDir) &&
+          (s.parentSessionId === sessionId || (!!sentPrompt && s.firstPrompt === sentPrompt))
         )
         if (newer) {
           stopContinuationPoll()
@@ -305,6 +334,7 @@ export default function LiveSession({
           // Remove stuck optimistic messages
           const stale = Array.from(pendingOptimistic.current)
           pendingOptimistic.current.clear()
+          clearAllSendStates()
           setMessages(prev => prev.filter(m => !m.uuid.startsWith('__optimistic__')))
           if (stale.length) setTotal(t => t - stale.length)
         }
@@ -349,6 +379,7 @@ export default function LiveSession({
     // 1. Optimistically add the user message to the UI immediately
     const optimisticId = `__optimistic__${Date.now()}`
     pendingOptimistic.current.add(optimisticId)
+    setSendStates(prev => ({ ...prev, [optimisticId]: 'sending' }))
     const optimisticMsg: ParsedMessage = {
       uuid: optimisticId,
       parentUuid: null,
@@ -396,6 +427,9 @@ export default function LiveSession({
       })
       const body = await res.json().catch(() => ({} as { error?: string }))
       if (res.ok) {
+        // Claude has the prompt — it may sit in its queue behind the current
+        // turn, but it is no longer "sending".
+        setSendStates(prev => ({ ...prev, [optimisticId]: 'sent' }))
         setProcState('running')
         setWaitingForReply(true)
         const sentAt = Date.now()
@@ -404,7 +438,7 @@ export default function LiveSession({
         // If the session was already dead, the reply will land in a continuation session.
         // Poll recent-sessions every 2s to find it (much faster than 60s timeout).
         if (initialProcState === 'dead' || procState === 'dead') {
-          watchForContinuation(sentAt)
+          watchForContinuation(sentAt, prompt)
         }
 
         // Safety fallback: clear spinner after 60s if nothing found
@@ -412,6 +446,7 @@ export default function LiveSession({
       } else {
         // Remove optimistic message on failure
         pendingOptimistic.current.delete(optimisticId)
+        clearSendState(optimisticId)
         setMessages(prev => prev.filter(m => m.uuid !== optimisticId))
         setTotal(t => t - 1)
         setInputText(prompt) // restore input
@@ -470,6 +505,7 @@ export default function LiveSession({
   async function stopAndResend(e: React.FormEvent) {
     e.preventDefault()
     if (!inputText.trim() || sending) return
+    const resendPrompt = inputText.trim()
     setSending(true)
     setReplyTimedOut(false)
     setSendError(null)
@@ -502,15 +538,16 @@ export default function LiveSession({
         // /api/run starts a *new* session, so the reply never lands in the file
         // this view is tailing. Watch for that session instead of sitting here
         // until the 60s timeout fires — which it always did.
-        watchForContinuation(sentAt)
+        watchForContinuation(sentAt, resendPrompt)
 
         // Optimistic user message
         const optimisticId = `__optimistic__${sentAt}`
         pendingOptimistic.current.add(optimisticId)
+        setSendStates(prev => ({ ...prev, [optimisticId]: 'sent' }))
         setMessages(prev => [...prev, {
           uuid: optimisticId, parentUuid: null, type: 'user', role: 'user',
           timestamp: new Date().toISOString(), isMeta: false, isSidechain: false,
-          sessionId, content: [{ type: 'text', text: inputText.trim() }],
+          sessionId, content: [{ type: 'text', text: resendPrompt }],
         }])
         setTotal(t => t + 1)
         setInputText('')
@@ -808,7 +845,7 @@ export default function LiveSession({
           ) : (
             displayMessages.map(msg => (
               <div key={msg.uuid} id={msg.uuid} className="msg-row">
-                <MessageBlock message={msg} encodedFilepath={encodedFilepath} toolResultMap={toolResultMap} />
+                <MessageBlock message={msg} encodedFilepath={encodedFilepath} toolResultMap={toolResultMap} sendState={sendStates[msg.uuid]} />
                 {!msg.uuid.startsWith('__optimistic__') && (
                   <button
                     className="msg-fork-btn"
