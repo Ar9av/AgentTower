@@ -1,11 +1,11 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useRouter, usePathname } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useTheme } from './ThemeProvider'
 import { useSidebar } from './SidebarProvider'
 import Notifications from './Notifications'
-import { appPath } from '@/lib/base-path'
 
 // ── Inline SVG icons ────────────────────────────────────────────────────────
 function IconBarChart() {

@@ -615,14 +615,23 @@ export default function MessageBlock({
   message,
   encodedFilepath,
   toolResultMap,
+  sendState,
 }: {
   message: ParsedMessage
   encodedFilepath?: string
   toolResultMap?: Map<string, ContentBlock>
+  /**
+   * Delivery state of an optimistic message. 'sending' while the request is
+   * actually in flight, 'sent' once the agent has accepted it — Claude often
+   * queues a prompt behind the current turn, and during that wait "Sending…"
+   * is simply untrue. Omitted for real messages read back from the transcript.
+   */
+  sendState?: 'sending' | 'sent'
 }) {
   const [msgCopied, setMsgCopied] = useState(false)
   const isUser = message.type === 'user'
   const isPending = message.uuid.startsWith('__optimistic__')
+  const pendingLabel = sendState === 'sent' ? 'Sent' : sendState === 'sending' ? 'Sending…' : null
   if (message.isMeta) return null
 
   const displayBlocks = message.content.filter(b =>
@@ -686,7 +695,7 @@ export default function MessageBlock({
         })}
       </div>
 
-      {isPending && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3, paddingRight: 4 }}>Sending…</div>}
+      {isPending && pendingLabel && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3, paddingRight: 4 }}>{pendingLabel}</div>}
       {message.usage && !isPending && (
         <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 3, paddingRight: isUser ? 4 : 0 }}>
           {message.usage.input_tokens}↑ {message.usage.output_tokens}↓

@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import type { ProjectInfo } from '@/lib/types'
@@ -44,7 +45,7 @@ export default function QuickLaunch() {
   // Fetch projects when opened
   useEffect(() => {
     if (!open) return
-    fetch('/api/projects')
+    fetch(appPath('/api/projects'))
       .then(r => r.ok ? r.json() : [])
       .then((p: ProjectInfo[]) => {
         // Sort: active first, then most recent
@@ -108,7 +109,7 @@ export default function QuickLaunch() {
         } catch { /* continue */ }
       }
 
-      const res = await fetch('/api/run', {
+      const res = await fetch(appPath('/api/run'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_path: selected.decodedPath, prompt: finalPrompt, model: MODEL_IDS[model], use_worktree: useWorktree }),

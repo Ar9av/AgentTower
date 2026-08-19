@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { appPath } from '@/lib/base-path'
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r/g
@@ -37,7 +38,7 @@ export default function TerminalView() {
 
   useEffect(() => {
     if (!sid) return
-    const es = new EventSource(`/api/terminal?sid=${sid}`)
+    const es = new EventSource(appPath(`/api/terminal?sid=${sid}`))
     esRef.current = es
     es.onmessage = e => {
       setConnecting(false)
@@ -95,7 +96,7 @@ export default function TerminalView() {
 
   async function restart() {
     esRef.current?.close()
-    if (sid) await fetch(`/api/terminal?sid=${sid}`, { method: 'DELETE' })
+    if (sid) await fetch(appPath(`/api/terminal?sid=${sid}`), { method: 'DELETE' })
     setSid(null)
     startSession()
   }

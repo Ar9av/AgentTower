@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSidebar } from './SidebarProvider'
@@ -30,7 +31,7 @@ export default function Sidebar() {
   useEffect(() => {
     if (!open) return
     setLoading(true)
-    fetch('/api/recent-sessions')
+    fetch(appPath('/api/recent-sessions'))
       .then(r => r.ok ? r.json() : [])
       .then(setSessions)
       .finally(() => setLoading(false))

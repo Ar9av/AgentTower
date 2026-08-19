@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useState, useEffect, useRef } from 'react'
 
 interface Props {
@@ -23,7 +24,7 @@ export default function SessionTagsButton({ sessionId, initialFavorite = false, 
   async function patch(body: Record<string, unknown>) {
     setSaving(true)
     try {
-      await fetch('/api/session-tags', {
+      await fetch(appPath('/api/session-tags'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, ...body }),

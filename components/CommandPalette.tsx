@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ProjectInfo } from '@/lib/types'
@@ -56,8 +57,8 @@ export default function CommandPalette() {
   useEffect(() => {
     if (!open) return
     Promise.all([
-      fetch('/api/projects').then(r => r.ok ? r.json() : []),
-      fetch('/api/recent-sessions').then(r => r.ok ? r.json() : []),
+      fetch(appPath('/api/projects')).then(r => r.ok ? r.json() : []),
+      fetch(appPath('/api/recent-sessions')).then(r => r.ok ? r.json() : []),
     ]).then(([p, s]) => { setProjects(p); setSessions(s) }).catch(() => {})
     setTimeout(() => inputRef.current?.focus(), 40)
   }, [open])

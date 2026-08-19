@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useState, useCallback } from 'react'
 
 interface GitHubData {
@@ -34,7 +35,7 @@ export default function GitHubIntegration() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/integrations/github')
+      const res = await fetch(appPath('/api/integrations/github'))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const d = await res.json() as GitHubData
       setData(d)
@@ -52,7 +53,7 @@ export default function GitHubIntegration() {
     try {
       const body: Record<string, unknown> = { enabled }
       if (token) body.token = token
-      const res = await fetch('/api/integrations/github', {
+      const res = await fetch(appPath('/api/integrations/github'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -71,7 +72,7 @@ export default function GitHubIntegration() {
 
   async function clearToken() {
     if (!confirm('Clear stored GitHub token?')) return
-    await fetch('/api/integrations/github', {
+    await fetch(appPath('/api/integrations/github'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clearToken: true }),

@@ -1,7 +1,7 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { appPath } from '@/lib/base-path'
 
 interface RecentSession {
   sessionId: string

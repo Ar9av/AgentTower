@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -157,8 +158,8 @@ function SearchInner() {
   // Fetch project list once
   useEffect(() => {
     Promise.all([
-      fetch('/api/projects?mode=claude').then(r => r.json() as Promise<ProjectInfo[]>),
-      fetch('/api/projects?mode=codex').then(r => r.json() as Promise<ProjectInfo[]>),
+      fetch(appPath('/api/projects?mode=claude')).then(r => r.json() as Promise<ProjectInfo[]>),
+      fetch(appPath('/api/projects?mode=codex')).then(r => r.json() as Promise<ProjectInfo[]>),
     ]).then(([claudeProjects, codexProjects]) => {
       const options: SearchProjectOption[] = [
         ...claudeProjects.map(project => ({
@@ -246,7 +247,7 @@ function SearchInner() {
     aiAbortRef.current = ctrl
 
     try {
-      const res = await fetch('/api/search/summarize', {
+      const res = await fetch(appPath('/api/search/summarize'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, results }),

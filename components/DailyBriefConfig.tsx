@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useState, useCallback } from 'react'
 import type { DailyBriefConfig, ProjectBriefConfig, TaskType, OutputFormat } from '@/lib/daily-brief'
 
@@ -60,7 +61,7 @@ export default function DailyBriefConfig() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/daily-brief/config')
+      const res = await fetch(appPath('/api/daily-brief/config'))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const d = await res.json() as ConfigData
       setData(d)
@@ -85,7 +86,7 @@ export default function DailyBriefConfig() {
     setError('')
     setSaved(false)
     try {
-      const res = await fetch('/api/daily-brief/config', {
+      const res = await fetch(appPath('/api/daily-brief/config'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -134,7 +135,7 @@ export default function DailyBriefConfig() {
   async function triggerMorningBrief() {
     setTriggering(true)
     try {
-      await fetch('/api/daily-brief/trigger', { method: 'POST' })
+      await fetch(appPath('/api/daily-brief/trigger'), { method: 'POST' })
     } finally {
       setTriggering(false)
     }

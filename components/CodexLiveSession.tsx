@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { PaginatedSession, ParsedMessage } from '@/lib/types'
@@ -78,7 +79,7 @@ export default function CodexLiveSession({
   }, [scrollTarget, messages.length])
 
   useEffect(() => {
-    const es = new EventSource(`/api/tail?mode=codex&f=${encodedFilepath}`)
+    const es = new EventSource(appPath(`/api/tail?mode=codex&f=${encodedFilepath}`))
     es.onopen = () => setConnected(true)
     es.onerror = () => setConnected(false)
     es.onmessage = (e) => {
@@ -105,7 +106,7 @@ export default function CodexLiveSession({
     const oldestUuid = messages[0]?.uuid
     if (!oldestUuid) { setLoadingMore(false); return }
     try {
-      const res = await fetch(`/api/session?mode=codex&f=${encodedFilepath}&limit=50&before=${oldestUuid}`)
+      const res = await fetch(appPath(`/api/session?mode=codex&f=${encodedFilepath}&limit=50&before=${oldestUuid}`))
       if (!res.ok) return
       const data: PaginatedSession = await res.json()
       setMessages(prev => {
@@ -168,7 +169,7 @@ export default function CodexLiveSession({
         }
       }
 
-      const res = await fetch('/api/input', {
+      const res = await fetch(appPath('/api/input'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId, prompt, model: selectedModel, mode: 'codex' }),
@@ -194,7 +195,7 @@ export default function CodexLiveSession({
     if (exporting) return
     setExporting(true)
     try {
-      const res = await fetch(`/api/export?mode=codex&f=${encodedFilepath}`)
+      const res = await fetch(appPath(`/api/export?mode=codex&f=${encodedFilepath}`))
       if (!res.ok) throw new Error('export failed')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)

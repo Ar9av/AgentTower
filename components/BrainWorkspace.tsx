@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import BrainChat from './BrainChat'
@@ -63,16 +64,16 @@ export default function BrainWorkspace() {
   const [newSkill, setNewSkill] = useState<{ name: string; description: string; prompt: string; tags: string } | null>(null)
 
   const loadAlerts = useCallback(() => {
-    fetch('/api/brain/watch').then(r => r.ok ? r.json() : { alerts: [] }).then(d => setAlerts(d.alerts ?? [])).catch(() => {})
+    fetch(appPath('/api/brain/watch')).then(r => r.ok ? r.json() : { alerts: [] }).then(d => setAlerts(d.alerts ?? [])).catch(() => {})
   }, [])
   const loadFacts = useCallback(() => {
-    fetch('/api/brain/memory').then(r => r.ok ? r.json() : { facts: [] }).then(d => setFacts(d.facts ?? [])).catch(() => {})
+    fetch(appPath('/api/brain/memory')).then(r => r.ok ? r.json() : { facts: [] }).then(d => setFacts(d.facts ?? [])).catch(() => {})
   }, [])
   const loadSkills = useCallback(() => {
-    fetch('/api/brain/skills').then(r => r.ok ? r.json() : { skills: [] }).then(d => setSkills(d.skills ?? [])).catch(() => {})
+    fetch(appPath('/api/brain/skills')).then(r => r.ok ? r.json() : { skills: [] }).then(d => setSkills(d.skills ?? [])).catch(() => {})
   }, [])
   const loadAgents = useCallback(() => {
-    fetch('/api/brain/agents').then(r => {
+    fetch(appPath('/api/brain/agents')).then(r => {
       if (r.status === 401) { window.location.assign('/login'); return { agents: [] } }
       return r.ok ? r.json() : { agents: [] }
     }).then(d => setAgents(d.agents ?? [])).catch(() => {})
@@ -90,17 +91,17 @@ export default function BrainWorkspace() {
   }
 
   async function deleteFact(id: string) {
-    await fetch(`/api/brain/memory?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+    await fetch(appPath(`/api/brain/memory?id=${encodeURIComponent(id)}`), { method: 'DELETE' })
     loadFacts()
   }
 
   async function deleteSkill(id: string) {
-    await fetch(`/api/brain/skills?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+    await fetch(appPath(`/api/brain/skills?id=${encodeURIComponent(id)}`), { method: 'DELETE' })
     loadSkills()
   }
 
   async function applySkill(skill: Skill) {
-    await fetch('/api/brain/skills', {
+    await fetch(appPath('/api/brain/skills'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: 'use', id: skill.id }),
@@ -111,7 +112,7 @@ export default function BrainWorkspace() {
 
   async function saveNewSkill() {
     if (!newSkill?.name.trim() || !newSkill?.prompt.trim()) return
-    await fetch('/api/brain/skills', {
+    await fetch(appPath('/api/brain/skills'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({

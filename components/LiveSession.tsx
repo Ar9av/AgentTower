@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { ParsedMessage, PaginatedSession } from '@/lib/types'
 import MessageBlock from './MessageBlock'
@@ -63,6 +64,9 @@ export default function LiveSession({
 
   const [replyTimedOut, setReplyTimedOut]   = useState(false)
   const [sendError, setSendError]           = useState<string | null>(null)
+  // Delivery state per optimistic message, so the bubble can say "Sending…"
+  // only while the request is genuinely in flight.
+  const [sendStates, setSendStates]         = useState<Record<string, 'sending' | 'sent'>>({})
   const [continuationUrl, setContinuationUrl] = useState<string | null>(null)
   const [forking, setForking]               = useState<string | null>(null)
   const [sessionFilter, setSessionFilter]   = useState('')
@@ -107,6 +111,19 @@ export default function LiveSession({
     }
   }, [])
 
+  const clearSendState = useCallback((...ids: string[]) => {
+    setSendStates(prev => {
+      if (!ids.some(id => id in prev)) return prev
+      const next = { ...prev }
+      for (const id of ids) delete next[id]
+      return next
+    })
+  }, [])
+
+  const clearAllSendStates = useCallback(() => {
+    setSendStates(prev => (Object.keys(prev).length ? {} : prev))
+  }, [])
+
   const stopContinuationPoll = useCallback(() => {
     if (continuationPollRef.current) {
       clearInterval(continuationPollRef.current)
@@ -124,13 +141,14 @@ export default function LiveSession({
       const stale = Array.from(pendingOptimistic.current)
       if (stale.length) {
         pendingOptimistic.current.clear()
+        clearSendState(...stale)
         setMessages(prev => prev.filter(m => !stale.includes(m.uuid)))
         setTotal(t => t - stale.length)
       }
       setReplyTimedOut(true)
       stopContinuationPoll()
     }, REPLY_TIMEOUT_MS)
-  }, [clearReplyTimeout, stopContinuationPoll])
+  }, [clearReplyTimeout, stopContinuationPoll, clearSendState])
 
   // Clear any armed timer when the session view goes away.
   useEffect(() => () => { clearReplyTimeout(); stopContinuationPoll() }, [clearReplyTimeout, stopContinuationPoll])
@@ -165,7 +183,7 @@ export default function LiveSession({
     if (forking) return
     setForking(uuid)
     try {
-      const res = await fetch('/api/fork', {
+      const res = await fetch(appPath('/api/fork'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ f: encodedFilepath, uuid }),
@@ -180,7 +198,7 @@ export default function LiveSession({
 
   // ── SSE tail ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    const es = new EventSource(`/api/tail?f=${encodedFilepath}`)
+    const es = new EventSource(appPath(`/api/tail?f=${encodedFilepath}`))
     es.onopen  = () => setConnected(true)
     es.onerror = () => setConnected(false)
     function handleMsg(msg: ParsedMessage) {
@@ -190,7 +208,10 @@ export default function LiveSession({
       // The real user message replaces any optimistic placeholders, so the
       // total only moves by the net difference — not +1 per placeholder.
       const replaced = msg.type === 'user' ? pendingOptimistic.current.size : 0
-      if (replaced) pendingOptimistic.current.clear()
+      if (replaced) {
+        pendingOptimistic.current.clear()
+        clearAllSendStates()
+      }
       setMessages(prev => {
         const filtered = replaced
           ? prev.filter(m => !m.uuid.startsWith('__optimistic__'))
@@ -228,7 +249,7 @@ export default function LiveSession({
   const pollProcessState = useCallback(async () => {
     if (!pid) return
     try {
-      const res = await fetch(`/api/process-state?pid=${pid}`)
+      const res = await fetch(appPath(`/api/process-state?pid=${pid}`))
       if (!res.ok) return
       const { state } = await res.json() as { state: ProcState }
       if (state === 'dead' && (prevState.current === 'running' || prevState.current === 'paused')) {
@@ -264,7 +285,7 @@ export default function LiveSession({
     if (!oldestUuid) { setLoadingMore(false); return }
 
     try {
-      const res = await fetch(`/api/session?f=${encodedFilepath}&limit=50&before=${oldestUuid}`)
+      const res = await fetch(appPath(`/api/session?f=${encodedFilepath}&limit=50&before=${oldestUuid}`))
       if (!res.ok) return
       const data: PaginatedSession = await res.json()
 
@@ -284,7 +305,15 @@ export default function LiveSession({
   }
 
   // Poll /api/recent-sessions to find the continuation session Claude spawned
-  function watchForContinuation(sentAt: number) {
+  //
+  // Identity, not recency, decides this. Matching on "a newer session in this
+  // project" looks reasonable and is badly wrong in practice: a busy project
+  // has other agents (orchestrator, cron jobs, Telegram bot) writing sessions
+  // every few seconds, so that test fires within one poll and hijacks the view
+  // to a stranger's session — deleting the message you just sent on the way
+  // out. A continuation is only a continuation if it descends from this
+  // session or opens with the exact prompt we just sent.
+  function watchForContinuation(sentAt: number, sentPrompt: string) {
     stopContinuationPoll()
     setContinuationUrl(null)
     let attempts = 0
@@ -296,27 +325,29 @@ export default function LiveSession({
         return
       }
       try {
-        const res = await fetch('/api/recent-sessions?limit=10')
+        const res = await fetch(appPath('/api/recent-sessions?limit=10'))
         if (!res.ok) return
-        const sessions: Array<{ mtime: number; encodedFilepath: string; filepath: string; firstPrompt: string }> = await res.json()
-        // A session newer than our send, not the current one, and — critically —
-        // in this same project. Without the project check any unrelated session
-        // (orchestrator, cron, another chat) gets claimed as our reply.
+        const sessions: Array<{
+          mtime: number; encodedFilepath: string; filepath: string
+          firstPrompt: string; parentSessionId: string | null
+        }> = await res.json()
         const newer = sessions.find(s =>
           s.mtime > sentAt - 500 &&
           s.encodedFilepath !== encodedFilepath &&
-          (!projectDir || s.filepath?.slice(0, s.filepath.lastIndexOf('/')) === projectDir)
+          (!projectDir || s.filepath?.slice(0, s.filepath.lastIndexOf('/')) === projectDir) &&
+          (s.parentSessionId === sessionId || (!!sentPrompt && s.firstPrompt === sentPrompt))
         )
         if (newer) {
           stopContinuationPoll()
           setWaitingForReply(false)
           setWaitingSince(null)
           setProcState('dead')
-          setContinuationUrl(`/session?f=${newer.encodedFilepath}`)
+          setContinuationUrl(appPath(`/session?f=${newer.encodedFilepath}`))
           clearReplyTimeout()
           // Remove stuck optimistic messages
           const stale = Array.from(pendingOptimistic.current)
           pendingOptimistic.current.clear()
+          clearAllSendStates()
           setMessages(prev => prev.filter(m => !m.uuid.startsWith('__optimistic__')))
           if (stale.length) setTotal(t => t - stale.length)
         }
@@ -361,6 +392,7 @@ export default function LiveSession({
     // 1. Optimistically add the user message to the UI immediately
     const optimisticId = `__optimistic__${Date.now()}`
     pendingOptimistic.current.add(optimisticId)
+    setSendStates(prev => ({ ...prev, [optimisticId]: 'sending' }))
     const optimisticMsg: ParsedMessage = {
       uuid: optimisticId,
       parentUuid: null,
@@ -401,13 +433,16 @@ export default function LiveSession({
       // 3. Send to Claude
       const inputBody: Record<string, string> = { session_id: sessionId, prompt }
       if (msgModel) inputBody.model = msgModel
-      const res = await fetch('/api/input', {
+      const res = await fetch(appPath('/api/input'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(inputBody),
       })
       const body = await res.json().catch(() => ({} as { error?: string }))
       if (res.ok) {
+        // Claude has the prompt — it may sit in its queue behind the current
+        // turn, but it is no longer "sending".
+        setSendStates(prev => ({ ...prev, [optimisticId]: 'sent' }))
         setProcState('running')
         setWaitingForReply(true)
         const sentAt = Date.now()
@@ -416,7 +451,7 @@ export default function LiveSession({
         // If the session was already dead, the reply will land in a continuation session.
         // Poll recent-sessions every 2s to find it (much faster than 60s timeout).
         if (initialProcState === 'dead' || procState === 'dead') {
-          watchForContinuation(sentAt)
+          watchForContinuation(sentAt, prompt)
         }
 
         // Safety fallback: clear spinner after 60s if nothing found
@@ -424,6 +459,7 @@ export default function LiveSession({
       } else {
         // Remove optimistic message on failure
         pendingOptimistic.current.delete(optimisticId)
+        clearSendState(optimisticId)
         setMessages(prev => prev.filter(m => m.uuid !== optimisticId))
         setTotal(t => t - 1)
         setInputText(prompt) // restore input
@@ -436,7 +472,7 @@ export default function LiveSession({
 
   async function resumeProcess() {
     if (!pid) return
-    await fetch('/api/resume', {
+    await fetch(appPath('/api/resume'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pid }),
@@ -451,10 +487,10 @@ export default function LiveSession({
     setSending(true)
     try {
       if (pid) {
-        await fetch('/api/kill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
+        await fetch(appPath('/api/kill'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
         setProcState('dead'); setPid(null)
       }
-      const res = await fetch('/api/run', {
+      const res = await fetch(appPath('/api/run'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_path: projectPath, prompt: promptText, model: MODEL_IDS[model] }),
@@ -465,7 +501,7 @@ export default function LiveSession({
         // Redirect to the newly spawned session
         setTimeout(async () => {
           try {
-            const r = await fetch('/api/recent-sessions?limit=3')
+            const r = await fetch(appPath('/api/recent-sessions?limit=3'))
             if (!r.ok) return
             const sessions = await r.json() as Array<{ encodedFilepath: string; projectDirName: string; mtime: number }>
             const newest = sessions[0]
@@ -482,12 +518,13 @@ export default function LiveSession({
   async function stopAndResend(e: React.FormEvent) {
     e.preventDefault()
     if (!inputText.trim() || sending) return
+    const resendPrompt = inputText.trim()
     setSending(true)
     setReplyTimedOut(false)
     setSendError(null)
     try {
       if (pid) {
-        await fetch('/api/kill', {
+        await fetch(appPath('/api/kill'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pid }),
@@ -497,7 +534,7 @@ export default function LiveSession({
       // Small pause so the kill lands before spawning
       await new Promise(r => setTimeout(r, 300))
 
-      const res = await fetch('/api/run', {
+      const res = await fetch(appPath('/api/run'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_path: projectPath, prompt: inputText.trim(), model: MODEL_IDS[model] }),
@@ -514,15 +551,16 @@ export default function LiveSession({
         // /api/run starts a *new* session, so the reply never lands in the file
         // this view is tailing. Watch for that session instead of sitting here
         // until the 60s timeout fires — which it always did.
-        watchForContinuation(sentAt)
+        watchForContinuation(sentAt, resendPrompt)
 
         // Optimistic user message
         const optimisticId = `__optimistic__${sentAt}`
         pendingOptimistic.current.add(optimisticId)
+        setSendStates(prev => ({ ...prev, [optimisticId]: 'sent' }))
         setMessages(prev => [...prev, {
           uuid: optimisticId, parentUuid: null, type: 'user', role: 'user',
           timestamp: new Date().toISOString(), isMeta: false, isSidechain: false,
-          sessionId, content: [{ type: 'text', text: inputText.trim() }],
+          sessionId, content: [{ type: 'text', text: resendPrompt }],
         }])
         setTotal(t => t + 1)
         setInputText('')
@@ -540,7 +578,7 @@ export default function LiveSession({
     if (exporting) return
     setExporting(true)
     try {
-      const res = await fetch(`/api/export?f=${encodedFilepath}`)
+      const res = await fetch(appPath(`/api/export?f=${encodedFilepath}`))
       if (!res.ok) throw new Error('export failed')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -763,7 +801,7 @@ export default function LiveSession({
           {isRunning && pid && (
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="chip chip-yellow" style={{ cursor: 'pointer', padding: '3px 10px' }}
-                onClick={() => fetch('/api/pause', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) }).then(() => setProcState('paused'))}>
+                onClick={() => fetch(appPath('/api/pause'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) }).then(() => setProcState('paused'))}>
                 Pause
               </button>
               <KillButton pid={pid} onKill={() => { setProcState('dead'); setWasInterrupted(true) }} />
@@ -874,7 +912,7 @@ export default function LiveSession({
           ) : (
             displayMessages.map(msg => (
               <div key={msg.uuid} id={msg.uuid} className="msg-row">
-                <MessageBlock message={msg} encodedFilepath={encodedFilepath} toolResultMap={toolResultMap} />
+                <MessageBlock message={msg} encodedFilepath={encodedFilepath} toolResultMap={toolResultMap} sendState={sendStates[msg.uuid]} />
                 {!msg.uuid.startsWith('__optimistic__') && (
                   <button
                     className="msg-fork-btn"
@@ -1026,7 +1064,7 @@ function ThinkingDots() {
 function KillButton({ pid, onKill }: { pid: number; onKill: () => void }) {
   const [confirm, setConfirm] = useState(false)
   async function doKill() {
-    await fetch('/api/kill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
+    await fetch(appPath('/api/kill'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
     onKill(); setConfirm(false)
   }
   return confirm ? (
@@ -1153,7 +1191,7 @@ function BottomBar({ procState, wasInterrupted, inputText, setInputText, sending
     if (!pid) return
     setStopping(true)
     try {
-      await fetch('/api/kill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
+      await fetch(appPath('/api/kill'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }) })
     } finally {
       setStopping(false)
     }

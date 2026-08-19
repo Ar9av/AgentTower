@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useState, useCallback } from 'react'
 import type { BriefRecord, BriefTask, TaskStatus } from '@/lib/daily-brief'
 
@@ -14,7 +15,7 @@ export default function DailyBriefHistory() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/daily-brief/history')
+      const res = await fetch(appPath('/api/daily-brief/history'))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setData(await res.json() as HistoryData)
     } catch (err) {
@@ -31,7 +32,7 @@ export default function DailyBriefHistory() {
   async function approveTask(briefId: string, taskId: string) {
     setApproving(taskId)
     try {
-      await fetch(`/api/daily-brief/brief/${briefId}`, {
+      await fetch(appPath(`/api/daily-brief/brief/${briefId}`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'approve', taskIds: [taskId] }),
@@ -43,7 +44,7 @@ export default function DailyBriefHistory() {
   }
 
   async function rejectTask(briefId: string, taskId: string) {
-    await fetch(`/api/daily-brief/brief/${briefId}`, {
+    await fetch(appPath(`/api/daily-brief/brief/${briefId}`), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reject', taskIds: [taskId] }),
@@ -54,7 +55,7 @@ export default function DailyBriefHistory() {
   async function approveAll(briefId: string, tasks: BriefTask[]) {
     const ids = tasks.filter(t => t.status === 'pending').map(t => t.id)
     if (!ids.length) return
-    await fetch(`/api/daily-brief/brief/${briefId}`, {
+    await fetch(appPath(`/api/daily-brief/brief/${briefId}`), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'approve', taskIds: ids }),
@@ -63,7 +64,7 @@ export default function DailyBriefHistory() {
   }
 
   async function skipBrief(briefId: string) {
-    await fetch(`/api/daily-brief/brief/${briefId}`, {
+    await fetch(appPath(`/api/daily-brief/brief/${briefId}`), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'skip' }),

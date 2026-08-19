@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useEffect, useRef, useState } from 'react'
 
 export interface Skill {
@@ -38,7 +39,7 @@ export function useSkills() {
   const [skills, setSkills] = useState<Skill[]>(cachedSkills ?? [])
   useEffect(() => {
     if (cachedSkills) return
-    fetch('/api/skills')
+    fetch(appPath('/api/skills'))
       .then(r => r.json())
       .then(d => { cachedSkills = d.skills ?? []; setSkills(cachedSkills!) })
       .catch(() => {})

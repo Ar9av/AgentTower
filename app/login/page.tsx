@@ -1,7 +1,7 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { appPath } from '@/lib/base-path'
 
 export default function LoginPage() {
   const router = useRouter()

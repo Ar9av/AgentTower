@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 import { useCallback, useEffect, useState } from 'react'
 
 interface SettingsData {
@@ -39,7 +40,7 @@ export default function SettingsConfig() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/settings')
+      const res = await fetch(appPath('/api/settings'))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const next = await res.json() as SettingsData
       setData(next)
@@ -58,7 +59,7 @@ export default function SettingsConfig() {
     setError('')
     try {
       const rules = rulesText.split('\n').map(v => v.trim()).filter(Boolean)
-      const res = await fetch('/api/settings', {
+      const res = await fetch(appPath('/api/settings'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectIgnoreRules: rules, terminalEnabled }),

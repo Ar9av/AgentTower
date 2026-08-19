@@ -1,4 +1,5 @@
 'use client'
+import { appPath } from '@/lib/base-path'
 
 import { useState, useEffect, useRef, useCallback, useMemo, CSSProperties } from 'react'
 import Link from 'next/link'
@@ -472,7 +473,7 @@ function BrainModal({ onClose, onDispatched }: { onClose: () => void; onDispatch
   const sheet = useProcessedSheet('/sprites/agents.png')
 
   useEffect(() => {
-    fetch('/api/projects')
+    fetch(appPath('/api/projects'))
       .then(r => r.ok ? r.json() : [])
       .then((data: ProjectInfo[]) => {
         setProjects(data)
@@ -488,7 +489,7 @@ function BrainModal({ onClose, onDispatched }: { onClose: () => void; onDispatch
     setSending(true)
     setError(null)
     try {
-      const res = await fetch('/api/run', {
+      const res = await fetch(appPath('/api/run'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_path: selectedPath, prompt: task.trim(), model }),
@@ -651,7 +652,7 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
 
   const fetchMessages = useCallback(async () => {
     try {
-      const res = await fetch(`/api/session?f=${session.encodedFilepath}&limit=14`)
+      const res = await fetch(appPath(`/api/session?f=${session.encodedFilepath}&limit=14`))
       if (!res.ok) return
       const data: PaginatedSession = await res.json()
       const relevant = data.messages.filter(m =>
@@ -672,7 +673,7 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
   useEffect(() => {
     const enc = btoa(unescape(encodeURIComponent(session.projectDirName)))
       .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-    fetch(`/api/sessions?p=${enc}`)
+    fetch(appPath(`/api/sessions?p=${enc}`))
       .then(r => r.ok ? r.json() : [])
       .then((list: SessionInfo[]) => {
         setSiblings(list.filter(s => s.sessionId !== session.sessionId).slice(0, 8))
@@ -691,7 +692,7 @@ function AgentModal({ session, onClose }: { session: RecentSession; onClose: () 
     setSending(true); setInputText('')
     try {
       // /api/input uses -r flag → resumes the session even if its process died
-      await fetch('/api/input', {
+      await fetch(appPath('/api/input'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: session.sessionId, prompt, model }),
@@ -934,7 +935,7 @@ export default function TowerView() {
 
   const poll = useCallback(async () => {
     try {
-      const res = await fetch('/api/recent-sessions?limit=40')
+      const res = await fetch(appPath('/api/recent-sessions?limit=40'))
       if (!res.ok) return
       const data: RecentSession[] = await res.json()
       const now = Date.now()
