@@ -1,0 +1,506 @@
+{
+  "claude": {
+    "title": "Claude AI",
+    "mono": false
+  },
+  "anthropic": {
+    "title": "Anthropic",
+    "mono": true
+  },
+  "openai": {
+    "title": "OpenAI",
+    "mono": true
+  },
+  "codex": {
+    "title": "Codex",
+    "mono": true
+  },
+  "cursor": {
+    "title": "Cursor",
+    "mono": true
+  },
+  "windsurf": {
+    "title": "Windsurf",
+    "mono": true
+  },
+  "copilot": {
+    "title": "GitHub Copilot",
+    "mono": true
+  },
+  "antigravity": {
+    "title": "Google Antigravity",
+    "mono": false
+  },
+  "gemini": {
+    "title": "Gemini",
+    "mono": false
+  },
+  "google": {
+    "title": "Google",
+    "mono": false
+  },
+  "grok": {
+    "title": "Grok",
+    "mono": true
+  },
+  "xai": {
+    "title": "xAI",
+    "mono": true
+  },
+  "ollama": {
+    "title": "Ollama",
+    "mono": true
+  },
+  "perplexity": {
+    "title": "Perplexity AI",
+    "mono": false
+  },
+  "deepseek": {
+    "title": "DeepSeek",
+    "mono": false
+  },
+  "mistral": {
+    "title": "Mistral AI",
+    "mono": false
+  },
+  "qwen": {
+    "title": "Qwen",
+    "mono": true
+  },
+  "kimi": {
+    "title": "Kimi",
+    "mono": false
+  },
+  "cohere": {
+    "title": "Cohere",
+    "mono": false
+  },
+  "groq": {
+    "title": "Groq",
+    "mono": false
+  },
+  "cerebras": {
+    "title": "Cerebras",
+    "mono": false
+  },
+  "replicate": {
+    "title": "Replicate",
+    "mono": true
+  },
+  "huggingface": {
+    "title": "Hugging Face",
+    "mono": false
+  },
+  "openrouter": {
+    "title": "OpenRouter",
+    "mono": true
+  },
+  "together": {
+    "title": "Together AI",
+    "mono": false
+  },
+  "opencode": {
+    "title": "OpenCode",
+    "mono": true
+  },
+  "openclaw": {
+    "title": "OpenClaw",
+    "mono": false
+  },
+  "kilocode": {
+    "title": "Kilo Code",
+    "mono": true
+  },
+  "amazonq": {
+    "title": "Amazon Q",
+    "mono": false
+  },
+  "v0": {
+    "title": "v0",
+    "mono": true
+  },
+  "bolt": {
+    "title": "bolt",
+    "mono": false
+  },
+  "lovable": {
+    "title": "Lovable",
+    "mono": false
+  },
+  "manus": {
+    "title": "Manus",
+    "mono": false
+  },
+  "zed": {
+    "title": "Zed",
+    "mono": true
+  },
+  "warp": {
+    "title": "Warp",
+    "mono": false
+  },
+  "langchain": {
+    "title": "LangChain",
+    "mono": false
+  },
+  "mcp": {
+    "title": "Model Context Protocol",
+    "mono": true
+  },
+  "github": {
+    "title": "GitHub",
+    "mono": true
+  },
+  "gitlab": {
+    "title": "GitLab",
+    "mono": false
+  },
+  "slack": {
+    "title": "Slack",
+    "mono": false
+  },
+  "discord": {
+    "title": "Discord",
+    "mono": false
+  },
+  "telegram": {
+    "title": "Telegram",
+    "mono": false
+  },
+  "notion": {
+    "title": "Notion",
+    "mono": true
+  },
+  "linear": {
+    "title": "Linear",
+    "mono": false
+  },
+  "atlassian": {
+    "title": "Atlassian",
+    "mono": false
+  },
+  "asana": {
+    "title": "Asana",
+    "mono": false
+  },
+  "trello": {
+    "title": "Trello",
+    "mono": false
+  },
+  "clickup": {
+    "title": "ClickUp",
+    "mono": false
+  },
+  "todoist": {
+    "title": "Todoist",
+    "mono": false
+  },
+  "obsidian": {
+    "title": "Obsidian",
+    "mono": false
+  },
+  "figma": {
+    "title": "Figma",
+    "mono": false
+  },
+  "sentry": {
+    "title": "Sentry",
+    "mono": false
+  },
+  "posthog": {
+    "title": "PostHog",
+    "mono": false
+  },
+  "mintlify": {
+    "title": "Mintlify",
+    "mono": false
+  },
+  "apollo": {
+    "title": "Apollo.io",
+    "mono": false
+  },
+  "stripe": {
+    "title": "Stripe",
+    "mono": false
+  },
+  "dodopayments": {
+    "title": "Dodo Payments",
+    "mono": false
+  },
+  "shopify": {
+    "title": "Shopify",
+    "mono": false
+  },
+  "salesforce": {
+    "title": "Salesforce",
+    "mono": false
+  },
+  "twilio": {
+    "title": "Twilio",
+    "mono": false
+  },
+  "resend": {
+    "title": "Resend",
+    "mono": true
+  },
+  "firecrawl": {
+    "title": "Firecrawl",
+    "mono": false
+  },
+  "n8n": {
+    "title": "n8n",
+    "mono": false
+  },
+  "raycast": {
+    "title": "Raycast",
+    "mono": false
+  },
+  "gmail": {
+    "title": "Gmail",
+    "mono": false
+  },
+  "googledrive": {
+    "title": "Google Drive",
+    "mono": false
+  },
+  "googlecalendar": {
+    "title": "Google Calendar",
+    "mono": false
+  },
+  "googlesheets": {
+    "title": "Google Sheets",
+    "mono": false
+  },
+  "googlemaps": {
+    "title": "Google Maps",
+    "mono": false
+  },
+  "youtube": {
+    "title": "YouTube",
+    "mono": false
+  },
+  "spotify": {
+    "title": "Spotify",
+    "mono": false
+  },
+  "reddit": {
+    "title": "Reddit",
+    "mono": false
+  },
+  "x": {
+    "title": "X (formerly Twitter)",
+    "mono": true
+  },
+  "linkedin": {
+    "title": "LinkedIn",
+    "mono": false
+  },
+  "stackoverflow": {
+    "title": "Stack Overflow",
+    "mono": false
+  },
+  "supabase": {
+    "title": "Supabase",
+    "mono": false
+  },
+  "firebase": {
+    "title": "Firebase",
+    "mono": false
+  },
+  "postgres": {
+    "title": "PostgreSQL",
+    "mono": false
+  },
+  "mysql": {
+    "title": "MySQL",
+    "mono": false
+  },
+  "mongodb": {
+    "title": "MongoDB",
+    "mono": false
+  },
+  "redis": {
+    "title": "Redis",
+    "mono": false
+  },
+  "sqlite": {
+    "title": "SQLite",
+    "mono": false
+  },
+  "neon": {
+    "title": "Neon",
+    "mono": false
+  },
+  "turso": {
+    "title": "Turso",
+    "mono": false
+  },
+  "upstash": {
+    "title": "Upstash",
+    "mono": false
+  },
+  "qdrant": {
+    "title": "Qdrant",
+    "mono": false
+  },
+  "prisma": {
+    "title": "Prisma",
+    "mono": true
+  },
+  "planetscale": {
+    "title": "PlanetScale",
+    "mono": true
+  },
+  "cloudflare": {
+    "title": "Cloudflare",
+    "mono": false
+  },
+  "vercel": {
+    "title": "Vercel",
+    "mono": true
+  },
+  "netlify": {
+    "title": "Netlify",
+    "mono": false
+  },
+  "railway": {
+    "title": "Railway",
+    "mono": true
+  },
+  "render": {
+    "title": "Render",
+    "mono": true
+  },
+  "aws": {
+    "title": "Amazon Web Services",
+    "mono": false
+  },
+  "gcp": {
+    "title": "Google Cloud",
+    "mono": false
+  },
+  "azure": {
+    "title": "Microsoft Azure",
+    "mono": false
+  },
+  "docker": {
+    "title": "Docker",
+    "mono": false
+  },
+  "kubernetes": {
+    "title": "Kubernetes",
+    "mono": false
+  },
+  "terraform": {
+    "title": "Terraform",
+    "mono": false
+  },
+  "grafana": {
+    "title": "Grafana",
+    "mono": false
+  },
+  "datadog": {
+    "title": "Datadog",
+    "mono": false
+  },
+  "sourcegraph": {
+    "title": "Sourcegraph",
+    "mono": false
+  },
+  "ngrok": {
+    "title": "Ngrok",
+    "mono": false
+  },
+  "postman": {
+    "title": "Postman",
+    "mono": false
+  },
+  "swagger": {
+    "title": "Swagger",
+    "mono": false
+  },
+  "graphql": {
+    "title": "GraphQL",
+    "mono": false
+  },
+  "playwright": {
+    "title": "Playwright",
+    "mono": false
+  },
+  "chrome": {
+    "title": "Chrome",
+    "mono": false
+  },
+  "git": {
+    "title": "Git",
+    "mono": false
+  },
+  "vscode": {
+    "title": "Visual Studio Code",
+    "mono": false
+  },
+  "jetbrains": {
+    "title": "JetBrains",
+    "mono": true
+  },
+  "vim": {
+    "title": "Vim",
+    "mono": false
+  },
+  "neovim": {
+    "title": "Neovim",
+    "mono": false
+  },
+  "bash": {
+    "title": "Bash",
+    "mono": true
+  },
+  "linux": {
+    "title": "Linux",
+    "mono": false
+  },
+  "apple": {
+    "title": "Apple",
+    "mono": true
+  },
+  "microsoft": {
+    "title": "Microsoft",
+    "mono": false
+  },
+  "meta": {
+    "title": "Meta",
+    "mono": false
+  },
+  "nvidia": {
+    "title": "NVIDIA",
+    "mono": false
+  },
+  "npm": {
+    "title": "NPM",
+    "mono": false
+  },
+  "python": {
+    "title": "Python",
+    "mono": false
+  },
+  "nodejs": {
+    "title": "Node.js",
+    "mono": false
+  },
+  "typescript": {
+    "title": "TypeScript",
+    "mono": false
+  },
+  "react": {
+    "title": "React",
+    "mono": false
+  },
+  "nextjs": {
+    "title": "Next.js",
+    "mono": false
+  },
+  "tailwind": {
+    "title": "Tailwind CSS",
+    "mono": false
+  }
+}

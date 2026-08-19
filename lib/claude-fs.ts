@@ -268,6 +268,47 @@ export function parseJsonlFilePaginated(
   return { firstMessage, messages: window, total, hiddenCount, hasMore }
 }
 
+// ─── Subagent traces ────────────────────────────────────────────────────────
+// Claude Code writes each Agent/Task spawn's own full transcript to
+// <sessionDir>/subagents/agent-<taskId>.jsonl, with a sibling .meta.json
+// ({agentType, description, toolUseId, ...}) linking it back to the tool_use
+// block (by toolUseId) that spawned it in the parent session file.
+
+export interface SubagentTrace {
+  agentType: string
+  description: string
+  messages: ParsedMessage[]
+}
+
+export function findSubagentTrace(sessionFilepath: string, toolId: string): SubagentTrace | null {
+  const subagentsDir = path.join(sessionFilepath.replace(/\.jsonl$/, ''), 'subagents')
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(subagentsDir)
+  } catch {
+    return null
+  }
+
+  for (const entry of entries) {
+    if (!entry.endsWith('.meta.json')) continue
+    let meta: { agentType?: string; description?: string; toolUseId?: string }
+    try {
+      meta = JSON.parse(fs.readFileSync(path.join(subagentsDir, entry), 'utf-8'))
+    } catch {
+      continue
+    }
+    if (meta.toolUseId !== toolId) continue
+
+    const jsonlPath = path.join(subagentsDir, entry.replace(/\.meta\.json$/, '.jsonl'))
+    return {
+      agentType: meta.agentType ?? '',
+      description: meta.description ?? '',
+      messages: parseJsonlFile(jsonlPath),
+    }
+  }
+  return null
+}
+
 export function extractFirstPrompt(messages: ParsedMessage[]): string {
   for (const m of messages) {
     if (m.isMeta || m.type !== 'user') continue

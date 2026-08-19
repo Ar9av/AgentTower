@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { ParsedMessage, PaginatedSession } from '@/lib/types'
 import MessageBlock from './MessageBlock'
+import SessionTree from './SessionTree'
 import ImageAttachment, { AttachedImage, useImagePaste } from './ImageAttachment'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -65,6 +66,7 @@ export default function LiveSession({
   const [continuationUrl, setContinuationUrl] = useState<string | null>(null)
   const [forking, setForking]               = useState<string | null>(null)
   const [sessionFilter, setSessionFilter]   = useState('')
+  const [viewMode, setViewMode]             = useState<'timeline' | 'tree'>('timeline')
   const router = useRouter()
 
   const bottomRef           = useRef<HTMLDivElement>(null)
@@ -242,6 +244,17 @@ export default function LiveSession({
     const id = setInterval(pollProcessState, 3000)
     return () => clearInterval(id)
   }, [pid, pollProcessState])
+
+  // Tree view needs the FULL session to find every spawned subagent — the
+  // initial/paginated window only holds the most recent 50 messages, so older
+  // completed Agent/Task calls would otherwise silently disappear from the graph.
+  // Chain-load everything as soon as Tree mode is entered.
+  useEffect(() => {
+    if (viewMode !== 'tree') return
+    if (!hasMore || loadingMore) return
+    loadMore()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, hasMore, loadingMore])
 
   // ── Load earlier messages ─────────────────────────────────────────────────
   async function loadMore() {
@@ -568,10 +581,27 @@ export default function LiveSession({
     return map
   }, [firstMessage, messages])
 
+  // Does this session have any spawned subagents? Gates the Tree view toggle.
+  const hasSubagents = useMemo(() => {
+    const allMsgs = firstMessage ? [firstMessage, ...messages] : messages
+    return allMsgs.some(msg => msg.content.some(b => b.type === 'tool_use' && (b.tool_name === 'Agent' || b.tool_name === 'Task')))
+  }, [firstMessage, messages])
+
+  // Claude Code injects a synthetic <task-notification> user turn when a background
+  // subagent finishes — pure plumbing (its info is already on the Agent block/trace
+  // modal), and it renders as an ugly raw-XML dump, so hide it from the transcript.
+  const TASK_NOTIFICATION_RE = /^<task-notification>[\s\S]*<\/task-notification>$/
+  function isTaskNotificationOnly(msg: ParsedMessage) {
+    if (msg.type !== 'user') return false
+    const textBlocks = msg.content.filter(b => b.type === 'text' && (b.text ?? '').trim())
+    return textBlocks.length === 1 && TASK_NOTIFICATION_RE.test(textBlocks[0].text!.trim())
+  }
+
   // Filter out user messages that contain only tool_result blocks (now shown inline)
   const displayMessages = useMemo(() => {
     const base = messages.filter(msg => {
       if (msg.type !== 'user') return true
+      if (isTaskNotificationOnly(msg)) return false
       const relevant = msg.content.filter(b =>
         b.type === 'tool_result' || (b.type === 'text' && (b.text ?? '').trim().length > 0)
       )
@@ -591,6 +621,7 @@ export default function LiveSession({
       }).join(' ').toLowerCase()
       return text.includes(q)
     })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, sessionFilter])
 
   // ── Model preference — persisted in localStorage ─────────────────────────
@@ -672,6 +703,32 @@ export default function LiveSession({
 
         {/* Status + controls — pushed right */}
         <div className="session-header-chips" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {hasSubagents && (
+            <div style={{ display: 'flex', border: '1px solid var(--glass-border)', borderRadius: 7, overflow: 'hidden' }}>
+              <button
+                onClick={() => setViewMode('timeline')}
+                title="Linear transcript"
+                style={{
+                  border: 'none', cursor: 'pointer', padding: '3px 10px', fontSize: 12,
+                  background: viewMode === 'timeline' ? 'var(--accent)' : 'transparent',
+                  color: viewMode === 'timeline' ? '#fff' : 'var(--text2)',
+                }}
+              >
+                Timeline
+              </button>
+              <button
+                onClick={() => setViewMode('tree')}
+                title="Subagent fan-out graph"
+                style={{
+                  border: 'none', cursor: 'pointer', padding: '3px 10px', fontSize: 12,
+                  background: viewMode === 'tree' ? 'var(--accent)' : 'transparent',
+                  color: viewMode === 'tree' ? '#fff' : 'var(--text2)',
+                }}
+              >
+                🌳 Tree
+              </button>
+            </div>
+          )}
           <button
             className="chip"
             onClick={() => window.location.reload()}
@@ -725,6 +782,16 @@ export default function LiveSession({
       <div ref={containerRef} onScroll={checkAtBottom} style={{ flex: 1, overflowY: 'auto', padding: 'clamp(10px,3vw,24px) clamp(8px,3vw,20px)' }}>
         <div style={{ maxWidth: 'min(100%, 840px)', margin: '0 auto' }}>
 
+          {viewMode === 'tree' ? (
+            <SessionTree
+              messages={messages}
+              firstMessage={firstMessage}
+              toolResultMap={toolResultMap}
+              loadingFullHistory={hasMore && loadingMore}
+              encodedFilepath={encodedFilepath}
+            />
+          ) : (
+          <>
           {/* Pinned first message */}
           {firstMessage && !firstInWindow && (
             <>
@@ -820,6 +887,8 @@ export default function LiveSession({
                 )}
               </div>
             ))
+          )}
+          </>
           )}
 
           {/* Continuation session found — direct link */}
@@ -918,6 +987,7 @@ export default function LiveSession({
           40% { transform: translateY(-5px); opacity: 1; }
         }
       `}</style>
+
     </div>
   )
 }
